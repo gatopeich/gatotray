@@ -184,7 +184,7 @@ void show_pref_dialog()
     gtk_container_add(GTK_CONTAINER(vb), hb);
     
     GtkWidget *frame = gtk_frame_new("Colors");
-    gtk_container_add(GTK_CONTAINER(hb), frame);
+    gtk_box_pack_start(GTK_BOX(hb), frame, FALSE, FALSE, 0);
     vb = gtk_vbox_new(FALSE,0);
     gtk_container_add(GTK_CONTAINER(frame), vb);
     for(PrefColor* c=pref_colors; c < pref_colors+G_N_ELEMENTS(pref_colors); c++)
@@ -201,7 +201,7 @@ void show_pref_dialog()
     }
     
     frame = gtk_frame_new("Options");
-    gtk_container_add(GTK_CONTAINER(hb), frame);
+    gtk_box_pack_start(GTK_BOX(hb), frame, TRUE, TRUE, 0);
     vb = gtk_vbox_new(FALSE,0);
     gtk_container_add(GTK_CONTAINER(frame), vb);
     for(PrefBoolean* b=pref_booleans; b < pref_booleans+G_N_ELEMENTS(pref_booleans); b++)
@@ -209,32 +209,32 @@ void show_pref_dialog()
         GtkWidget *cbutton = gtk_check_button_new_with_label(b->description);
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(cbutton), *b->value);
         g_signal_connect(G_OBJECT(cbutton), "toggled", G_CALLBACK(on_option_toggled), b);
-        gtk_container_add(GTK_CONTAINER(vb), cbutton);
+        gtk_box_pack_start(GTK_BOX(vb), cbutton, FALSE, FALSE, 0);
     }
 
     for(PrefRangeval* rv=pref_rangevals; rv < pref_rangevals+G_N_ELEMENTS(pref_rangevals); rv++)
     {
         GtkWidget* innerBox = gtk_hbox_new(FALSE,0);
-        gtk_container_add(GTK_CONTAINER(innerBox), gtk_label_new(rv->description));
+        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new(rv->description), FALSE, FALSE, 0);
         GtkSpinButton* spin = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(rv->min, rv->max, 1));
         gtk_spin_button_set_digits(spin, 0);
         gtk_spin_button_set_value(spin, *rv->value);
         g_signal_connect(G_OBJECT(spin), "value-changed", G_CALLBACK(on_rangeval_changed), rv);
-        gtk_container_add(GTK_CONTAINER(innerBox), GTK_WIDGET(spin));
-        gtk_container_add(GTK_CONTAINER(vb), innerBox);
+        gtk_box_pack_start(GTK_BOX(innerBox), GTK_WIDGET(spin), FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(vb), innerBox, FALSE, FALSE, 0);
     }
 
     for(PrefString* st=pref_strings; st < pref_strings+G_N_ELEMENTS(pref_strings); st++)
     {
         GtkWidget* innerBox = gtk_hbox_new(FALSE,0);
         gchar* label = g_strconcat(st->description, ":", NULL);
-        gtk_container_add(GTK_CONTAINER(innerBox), gtk_label_new(label));
+        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new(label), FALSE, FALSE, 0);
         g_free(label);
         GtkWidget* entry = gtk_entry_new();
         gtk_entry_set_text(GTK_ENTRY(entry), *st->value);
         g_signal_connect(G_OBJECT(entry), "changed", G_CALLBACK(on_string_changed), st);
-        gtk_container_add(GTK_CONTAINER(innerBox), GTK_WIDGET(entry));
-        gtk_container_add(GTK_CONTAINER(vb), innerBox);
+        gtk_box_pack_start(GTK_BOX(innerBox), GTK_WIDGET(entry), TRUE, TRUE, 0);
+        gtk_box_pack_start(GTK_BOX(vb), innerBox, FALSE, FALSE, 0);
     }
 
     gtk_widget_show_all(GTK_WIDGET(pref_dialog));
