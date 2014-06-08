@@ -1,10 +1,11 @@
-#define GATOTRAY_VERSION "gatotray v2.0"
+#define GATOTRAY_VERSION "gatotray v2.2"
 /*
  * (c) 2011 by gatopeich, licensed under a Creative Commons Attribution 3.0
  * Unported License: http://creativecommons.org/licenses/by/3.0/
  * Briefly: Use it however suits you better and just give me due credit.
  *
  * Changelog:
+ * v2.2 Added config for top command and location of temperature & frequency
  * v2.0 Added pref file and dialog.
  * v1.11 Experimenting with configurability.
  * v1.10 Added support for reading temperature from /sys (kernel>=2.6.26)
@@ -30,7 +31,6 @@
 
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
-#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "cpu_usage.c"
 #include "settings.c"
@@ -71,7 +71,7 @@ void redraw(void)
 {
     gdk_gc_set_rgb_fg_color(gc, &bg_color);
     gdk_draw_rectangle(pixmap, gc, TRUE, 0, 0, width, width);
-    
+
     for(int i=0; i<width; i++)
     {
         CPUstatus* h = &history[width-1-i];
@@ -96,7 +96,7 @@ void redraw(void)
 
     int T = history[0].temp;
     if(T) /* Hide if 0, meaning it could not be read */
-    if( T<85 || (timer&1) ) /* Blink when hot! */
+    if( T<pref_temp_alarm || (timer&1) ) /* Blink when hot! */
     {
         /* scale temp from 5~105 degrees Celsius to 0~100*/
         T = (T-5)*100/100;
@@ -140,7 +140,7 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
 
     if(pixmap) g_object_unref(pixmap);
     pixmap = gdk_pixmap_new(NULL, width, width, 24);
-    
+
     if(gc)  g_object_unref(gc);
     gc = gdk_gc_new(pixmap);
     gdk_gc_set_line_attributes(gc, 1, GDK_LINE_SOLID, GDK_CAP_NOT_LAST, GDK_JOIN_MITER);
@@ -154,7 +154,7 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
             termometer_tube[i].y = termometer[i].y;
         }
     }
-    
+
     redraw();
     return TRUE;
 }
@@ -200,6 +200,14 @@ timeout_cb( gpointer data)
     return TRUE;
 }
 
+void
+open_website()
+{
+    char *argv[] = {"xdg-open", "https://code.google.com/p/gatotray/", NULL};
+    g_spawn_async( NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+}
+
+GRegex* regex_position;
 gboolean
 icon_activate(GtkStatusIcon *app_icon, gpointer user_data)
 {
@@ -212,8 +220,7 @@ icon_activate(GtkStatusIcon *app_icon, gpointer user_data)
     }
     else
     {
-        #define BASE_COMMAND "xterm -n 'gatotray: top' -rv -geometry "
-        char command[256] = BASE_COMMAND "73x12 top";
+        gchar* pos;
         GdkRectangle area;
         GtkOrientation orientation;
         if(gtk_status_icon_get_geometry(app_icon, NULL, &area, &orientation))
@@ -226,31 +233,30 @@ icon_activate(GtkStatusIcon *app_icon, gpointer user_data)
                 y = area.y;
                 x = area.x > area.width ? -1 : 0;
             }
-            g_snprintf(command, sizeof(command)
-                , BASE_COMMAND "73x12%+d%+d top"
-                , x, y);
+            pos = g_strdup_printf("%+d%+d", x, y);
         }
-        char **myargv;
-        g_shell_parse_argv(command, NULL, &myargv, NULL);
-        g_spawn_async( NULL, myargv, NULL, G_SPAWN_SEARCH_PATH,
-             NULL, NULL, &tops_pid, NULL);
-        g_strfreev(myargv);
+        else pos = g_strdup("");
+        if (!regex_position) regex_position = g_regex_new("{position}",0,0,NULL);
+        gchar* command = g_regex_replace_literal(regex_position, pref_custom_command, -1, 0, pos, 0, NULL);
+        g_free(pos);
+        char **argv;
+        g_shell_parse_argv(command, NULL, &argv, NULL);
+        g_free(command);
+        g_spawn_async( NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &tops_pid, NULL);
+        g_strfreev(argv);
     }
     return TRUE;
 }
 
 int
-main( int   argc, char *argv[] )
+main( int argc, char *argv[] )
 {
     gtk_init (&argc, &argv);
     GdkPixbuf* xpm = gdk_pixbuf_new_from_xpm_data(gatotray_xpm);
     gtk_window_set_default_icon(xpm);
 
     pref_init();
-    //~ gchar* cs;
-    //~ g_object_get(gtk_pref_get_default(), "gtk-color-scheme", &cs, NULL);
-    //~ g_message("gtk-color-scheme: %s", cs);
-    
+
     history = g_malloc(sizeof(*history));
     history[0].cpu = cpu_usage(SCALE);
     history[0].freq = 0;
@@ -264,7 +270,8 @@ main( int   argc, char *argv[] )
     GtkWidget* menuitem;
 
     menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_ABOUT, NULL);
-    gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), GATOTRAY_VERSION);
+    gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Open " GATOTRAY_VERSION " website");
+    g_signal_connect(G_OBJECT (menuitem), "activate", open_website, NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
 
     gtk_menu_shell_append(GTK_MENU_SHELL(menu),
@@ -279,7 +286,7 @@ main( int   argc, char *argv[] )
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
     gtk_widget_show_all(menu);
-    
+
     g_signal_connect(G_OBJECT(app_icon), "popup-menu", G_CALLBACK(popup_menu_cb), menu);
     g_signal_connect(G_OBJECT(app_icon), "size-changed", G_CALLBACK(resize_cb), NULL);
     g_signal_connect(G_OBJECT(app_icon), "activate", G_CALLBACK(icon_activate), NULL);

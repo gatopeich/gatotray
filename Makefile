@@ -10,26 +10,30 @@
 
 CFLAGS := -std=c99 -Wall -O3 $(CFLAGS)
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
-LDFLAGS := `pkg-config --libs gtk+-2.0` $(LDFLAGS)
-CC := gcc
-LD := gcc $(LDFLAGS)
+LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
 
-### Specific targets
 targets := gatotray
 
 all: $(targets)
 
 gatotray: gatotray.o
-	$(LD) -o $@ $^
 
 gatotray.bin32: gatotray.o32
-	$(LD) -m32 -o $@ $^
+	$(LD) $(LDLIBS) -m32 -o $@ $^
 
 install: gatotray
 	strip $^
 	install $^ /usr/local/bin
 	install gatotray.xpm /usr/share/icons
 
+package: gatotray
+	strip $^
+	#install -vD $^ root/opt/extras.ubuntu.com/gatotray/gatotray
+	install -vD $^ root/usr/bin/gatotray
+	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
+	install -vD Debian-Control root/DEBIAN/control
+	dpkg -b root gatotray.deb
+	
 
 # Additional: .api file for SciTE users...
 .api: $(wildcard *.h)
@@ -46,7 +50,10 @@ clean:
 	rm -f $(objects) $(depends) $(targets)
 
 %.o: %.c %.d
-	$(CC) -c $(CPPFLAGS) $(CFLAGS) -o $@ $<
+	$(CC) -c $(CPPFLAGS) $(CFLAGS) -o $@ $<	
+
+%.bin32: %.o32
+	$(LD) -m32 -o $@ $^
 
 %.o32: %.c %.d
 	$(CC) -c $(CPPFLAGS) $(CFLAGS) -m32 -o $@ $<
