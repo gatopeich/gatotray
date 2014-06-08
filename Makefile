@@ -12,7 +12,7 @@ CFLAGS := -std=c99 -Wall -O3 $(CFLAGS)
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
 LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
 
-targets := gatotray
+targets := gatotray gatotray.deb
 
 all: $(targets)
 
@@ -26,10 +26,10 @@ install: gatotray
 	install $^ /usr/local/bin
 	install gatotray.xpm /usr/share/icons
 
-package: gatotray
-	strip $^
-	#install -vD $^ root/opt/extras.ubuntu.com/gatotray/gatotray
-	install -vD $^ root/usr/bin/gatotray
+gatotray.deb: gatotray gatotray.xpm Debian-Control
+	strip gatotray
+	#install -vD gatotray root/opt/extras.ubuntu.com/gatotray/gatotray
+	install -vD gatotray root/usr/bin/gatotray
 	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
 	install -vD Debian-Control root/DEBIAN/control
 	dpkg -b root gatotray.deb
