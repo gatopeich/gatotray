@@ -133,51 +133,39 @@ cpu_freq(void)
 int
 cpu_temperature(void)
 {
-    static enum { NOTHING = 0, SYS, PROC, UNKNOWN } found = UNKNOWN;
-    if( NOTHING == found ) return 0;
-
-    static FILE *acpi_temp = NULL;
-    if( !acpi_temp ) {
-        if( (acpi_temp = fopen("/sys/class/thermal/thermal_zone0/temp", "r")) )
-        {
-            found = SYS;
-        }
-        else {
-            error(0, errno, "Can't open /sys/class/thermal/thermal_zone0/temp");
-            if( (acpi_temp = fopen("/proc/acpi/thermal_zone/THM/temperature", "r"))
-            || (acpi_temp = fopen("/proc/acpi/thermal_zone/THM0/temperature", "r"))
-            || (acpi_temp = fopen("/proc/acpi/thermal_zone/THRM/temperature", "r")) )
-            {
-                found = PROC;
-            }
-            else {
-                error(0, errno, "Can't open /proc/acpi/thermal_zone/THxx/temperature");
-                found = NOTHING;
-                return 0;
-            }
-        }
-    }
+    static gboolean unavailable = FALSE;
+    if (unavailable) return 0;
 
     int T = 0;
-    if( SYS == found ) {
-        if(1!=fscanf(acpi_temp, "%d", &T)) {
-            error(0, errno, "Can't read temperature file.");
-            fclose(acpi_temp);
-            found = NOTHING;
-            return 0;
-        }
-        T /= 1000;
+    static FILE* temperature_file = NULL;
+    static const char* format;
+    if (!temperature_file) {
+        if ((temperature_file = fopen("/sys/class/hwmon/hwmon0/device/temp1_input", "r"))
+         || (temperature_file = fopen("/sys/class/hwmon/hwmon1/device/temp1_input", "r"))
+         || (temperature_file = fopen("/sys/class/hwmon/hwmon0/temp1_input", "r"))
+         || (temperature_file = fopen("/sys/class/hwmon/hwmon1/temp1_input", "r"))
+         || (temperature_file = fopen("/sys/class/thermal/thermal_zone0/temp", "r"))
+         || (temperature_file = fopen("/proc/acpi/thermal_zone/THM/temperature", "r"))
+         || (temperature_file = fopen("/proc/acpi/thermal_zone/THM0/temperature", "r"))
+         || (temperature_file = fopen("/proc/acpi/thermal_zone/THRM/temperature", "r")))
+        {
+            format = "temperature: %d C"; // ACPI style
+            if (!fscanf(temperature_file, format, &T)) {
+                format = "%d";
+                rewind(temperature_file);
+                if (!fscanf(temperature_file, format, &T))
+                    goto error;
+            }
+        } else goto error;
     }
-    else if( PROC == found ) {
-        if(1!=fscanf(acpi_temp, "temperature: %d C", &T)) {
-            error(0, errno, "Can't read temperature file, wrong format?");
-            fclose(acpi_temp);
-            found = NOTHING;
-            return 0;
-        }
-    }
-    rewind(acpi_temp);
-    fflush(acpi_temp);
 
+    rewind(temperature_file);
+    fflush(temperature_file);
+    if (!fscanf(temperature_file, format, &T)) goto error;
+    if (T>1000) T=(T+500)/1000;
     return T;
+    
+    error:
+    unavailable = TRUE;
+    return 0;
 }
