@@ -26,8 +26,6 @@ install: gatotray
 	install $^ /usr/local/bin
 	install gatotray.xpm /usr/share/icons
 
-deb: gatotray.deb
-
 gatotray.deb: gatotray gatotray.xpm Debian-Control
 	strip gatotray
 	#install -vD gatotray root/opt/extras.ubuntu.com/gatotray/gatotray
