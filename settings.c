@@ -102,7 +102,7 @@ void pref_init()
     g_assert(!pref_file);
     pref_file = g_key_file_new();
     gchar* path = g_strconcat(g_get_user_config_dir(), "/", pref_filename, NULL);
-    if(g_key_file_load_from_file(pref_file, path, G_KEY_FILE_KEEP_COMMENTS, NULL))
+    if (g_key_file_load_from_file(pref_file, path, G_KEY_FILE_KEEP_COMMENTS, NULL))
         g_message("Loaded %s", path);
     g_free(path);
 

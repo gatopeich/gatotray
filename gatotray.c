@@ -189,11 +189,10 @@ timeout_cb( gpointer data)
     redraw();
 
     gchar* tip =
-    g_strdup_printf("CPU %d%% busy @ %d MHz, %d%%wa\n"
-                    "Temperature: %d C\n"
-                    "(click for 'top')"
-                    , history[0].cpu.usage*100/SCALE, freq/1000, history[0].cpu.iowait*100/SCALE
-                    , history[0].temp);
+    g_strdup_printf(history[0].temp? "CPU %d%% busy @ %d MHz, %d%%wa\nTemperature: %d C"
+        : "CPU %d%% busy @ %d MHz, %d%%wa"
+        , history[0].cpu.usage*100/SCALE, freq/1000, history[0].cpu.iowait*100/SCALE
+        , history[0].temp);
     gtk_status_icon_set_tooltip(app_icon, tip);
     g_free(tip);
 
