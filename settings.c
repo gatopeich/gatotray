@@ -40,15 +40,17 @@ PrefBoolean pref_booleans[] = {
     { "Transparent background", &pref_transparent },
 };
 
+gint refresh_rate = 1000;
 gint pref_temp_alarm = 85;
 typedef struct {
     const gchar* description;
     gint* value;
-    gint max;
     gint min;
+    gint max;
 } PrefRangeval;
 PrefRangeval pref_rangevals[] = {
-    { "High temperature alarm", &pref_temp_alarm, 100, 30 },
+    { "Refresh rate (ms)", &refresh_rate, 100, 100000 },
+    { "High temperature alarm", &pref_temp_alarm, 30, 100 },
 };
 
 char* pref_custom_command;
@@ -215,13 +217,13 @@ void show_pref_dialog()
     for(PrefRangeval* rv=pref_rangevals; rv < pref_rangevals+G_N_ELEMENTS(pref_rangevals); rv++)
     {
         GtkWidget* innerBox = gtk_hbox_new(FALSE,0);
-        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new(rv->description), FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new(rv->description), TRUE, TRUE, 0);
         GtkSpinButton* spin = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(rv->min, rv->max, 1));
         gtk_spin_button_set_digits(spin, 0);
         gtk_spin_button_set_value(spin, *rv->value);
         g_signal_connect(G_OBJECT(spin), "value-changed", G_CALLBACK(on_rangeval_changed), rv);
         gtk_box_pack_start(GTK_BOX(innerBox), GTK_WIDGET(spin), FALSE, FALSE, 0);
-        gtk_box_pack_start(GTK_BOX(vb), innerBox, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(vb), GTK_WIDGET(innerBox), FALSE, FALSE, 0);
     }
 
     for(PrefString* st=pref_strings; st < pref_strings+G_N_ELEMENTS(pref_strings); st++)

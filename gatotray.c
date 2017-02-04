@@ -1,10 +1,11 @@
-#define GATOTRAY_VERSION "gatotray v2.2"
+#define GATOTRAY_VERSION "gatotray v3.0"
 /*
  * (c) 2011 by gatopeich, licensed under a Creative Commons Attribution 3.0
  * Unported License: http://creativecommons.org/licenses/by/3.0/
  * Briefly: Use it however suits you better and just give me due credit.
  *
  * Changelog:
+ * v3.0 Render with Cairo and adding a screensaver mode 
  * v2.2 Added config for top command and location of temperature & frequency
  * v2.0 Added pref file and dialog.
  * v1.11 Experimenting with configurability.
@@ -36,7 +37,7 @@
 #include "settings.c"
 #include "gatotray.xpm"
 
-#define SCALE 100
+#define SCALE (1<<20)
 
 typedef struct {
     CPU_Usage cpu;
@@ -50,6 +51,7 @@ int width = 0, hist_size = 0, timer = 0;
 
 GdkPixmap *pixmap = NULL;
 GtkStatusIcon *app_icon = NULL;
+GdkWindow *screensaver = NULL;
 
 static void
 popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* menu)
@@ -95,8 +97,8 @@ void redraw(void)
     }
 
     int T = history[0].temp;
-    if(T) /* Hide if 0, meaning it could not be read */
-    if( T<pref_temp_alarm || (timer&1) ) /* Blink when hot! */
+    if (T) /* Hide if 0, meaning it could not be read */
+    if ( T<pref_temp_alarm || (timer&1) ) /* Blink when hot! */
     {
         /* scale temp from 5~105 degrees Celsius to 0~100*/
         T = (T-5)*100/100;
@@ -115,15 +117,23 @@ void redraw(void)
         gdk_draw_lines(pixmap, gc, termometer, sizeof(termometer)/sizeof(*termometer));
     }
 
-    GdkPixbuf *pixbuf =
-    gdk_pixbuf_get_from_drawable(NULL, pixmap, NULL, 0, 0, 0, 0, width, width);
-    if(pref_transparent) {
-        GdkPixbuf* new = gdk_pixbuf_add_alpha(pixbuf, TRUE, bg_color.red>>8
-                                        , bg_color.green>>8, bg_color.blue>>8);
+    GdkPixbuf *pixbuf = gdk_pixbuf_get_from_drawable(NULL, pixmap, NULL, 0, 0, 0, 0, width, width);
+    if (pref_transparent) { // TODO: Draw directly with alpha!
+        GdkPixbuf* new = gdk_pixbuf_add_alpha(pixbuf, TRUE
+            , bg_color.red>>8, bg_color.green>>8, bg_color.blue>>8);
         g_object_unref(pixbuf);
         pixbuf = new;
     }
-    gtk_status_icon_set_from_pixbuf(GTK_STATUS_ICON(app_icon), pixbuf);
+    if (screensaver)
+    {
+        int w = gdk_window_get_width(screensaver), h = gdk_window_get_height(screensaver);
+        // g_message("%dx%d",w,h);
+        GdkPixbuf* scaled = gdk_pixbuf_scale_simple (pixbuf, w*.9, h*.9, GDK_INTERP_NEAREST);
+        gdk_draw_pixbuf (screensaver, NULL, scaled, 0,0, w/20,h/20, -1,-1, GDK_RGB_DITHER_NONE,0,0);
+        g_object_unref(scaled);
+    } else {
+        gtk_status_icon_set_from_pixbuf(GTK_STATUS_ICON(app_icon), pixbuf);
+    }
     g_object_unref(pixbuf);
 }
 
@@ -138,10 +148,10 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
     }
     width = newsize;
 
-    if(pixmap) g_object_unref(pixmap);
+    if (pixmap) g_object_unref(pixmap);
     pixmap = gdk_pixmap_new(NULL, width, width, 24);
 
-    if(gc)  g_object_unref(gc);
+    if (gc)  g_object_unref(gc);
     gc = gdk_gc_new(pixmap);
     gdk_gc_set_line_attributes(gc, 1, GDK_LINE_SOLID, GDK_CAP_NOT_LAST, GDK_JOIN_MITER);
 
@@ -188,14 +198,15 @@ timeout_cb( gpointer data)
 
     redraw();
 
-    gchar* tip =
-    g_strdup_printf(history[0].temp? "CPU %d%% busy @ %d MHz, %d%%wa\nTemperature: %d C"
-        : "CPU %d%% busy @ %d MHz, %d%%wa"
-        , history[0].cpu.usage*100/SCALE, freq/1000, history[0].cpu.iowait*100/SCALE
-        , history[0].temp);
-    gtk_status_icon_set_tooltip(app_icon, tip);
-    g_free(tip);
-
+    if (!screensaver) {
+        gchar* tip =
+        g_strdup_printf(history[0].temp? "CPU %d%% busy @ %d MHz, %d%%wa\nTemperature: %d C"
+            : "CPU %d%% busy @ %d MHz, %d%%wa"
+            , history[0].cpu.usage*100/SCALE, freq/1000, history[0].cpu.iowait*100/SCALE
+            , history[0].temp);
+        gtk_status_icon_set_tooltip(app_icon, tip);
+        g_free(tip);        
+    }
     return TRUE;
 }
 
@@ -262,38 +273,55 @@ main( int argc, char *argv[] )
     history[0].temp = cpu_temperature();
     hist_size = width = 1;
 
-    app_icon = gtk_status_icon_new();
-    resize_cb(app_icon, width, NULL);
+    gchar** envp = g_get_environ();
+    const gchar* wid = g_environ_getenv(envp,"XSCREENSAVER_WINDOW");
+    if (wid || g_str_has_suffix(argv[0], "xgatotray")
+            || (argc>1 && g_str_has_suffix(argv[1], "-root"))) {
+        if (wid)
+            screensaver = gdk_window_foreign_new(g_ascii_strtoull(wid, NULL, 16));
+        else {
+            // screensaver = GDK_WINDOW(gdk_get_default_root_window());
+            GdkWindowAttr attr = {
+                "xgatotray", 0, 0,0,300,300, GDK_INPUT_OUTPUT,NULL,NULL,GDK_WINDOW_TOPLEVEL
+                , NULL, NULL, NULL, FALSE, GDK_WINDOW_TYPE_HINT_NORMAL
+            };
+            screensaver = gdk_window_new(NULL, &attr, GDK_WA_TITLE);
+            // gdk_window_fullscreen(GDK_WINDOW(screensaver));
+            gdk_window_show(GDK_WINDOW(screensaver));
+        }
+        resize_cb(NULL, width=100, NULL);
+    } else {
+        app_icon = gtk_status_icon_new();
+        resize_cb(app_icon, width, NULL);
 
-    GtkWidget* menu = gtk_menu_new();
-    GtkWidget* menuitem;
+        GtkWidget* menu = gtk_menu_new();
+        GtkWidget* menuitem;
 
-    menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_ABOUT, NULL);
-    gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Open " GATOTRAY_VERSION " website");
-    g_signal_connect(G_OBJECT (menuitem), "activate", open_website, NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_ABOUT, NULL);
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Open " GATOTRAY_VERSION " website");
+        g_signal_connect(G_OBJECT (menuitem), "activate", open_website, NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
 
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu),
-                          gtk_separator_menu_item_new());
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                              gtk_separator_menu_item_new());
 
-    menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_PREFERENCES, NULL);
-    g_signal_connect(G_OBJECT (menuitem), "activate", show_pref_dialog, NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_PREFERENCES, NULL);
+        g_signal_connect(G_OBJECT (menuitem), "activate", show_pref_dialog, NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
-    menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_QUIT, NULL);
-    g_signal_connect(G_OBJECT(menuitem), "activate", G_CALLBACK(gtk_main_quit), NULL);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_QUIT, NULL);
+        g_signal_connect(G_OBJECT(menuitem), "activate", G_CALLBACK(gtk_main_quit), NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
-    gtk_widget_show_all(menu);
+        gtk_widget_show_all(menu);
 
-    g_signal_connect(G_OBJECT(app_icon), "popup-menu", G_CALLBACK(popup_menu_cb), menu);
-    g_signal_connect(G_OBJECT(app_icon), "size-changed", G_CALLBACK(resize_cb), NULL);
-    g_signal_connect(G_OBJECT(app_icon), "activate", G_CALLBACK(icon_activate), NULL);
-    gtk_status_icon_set_visible(app_icon, TRUE);
-
-    g_timeout_add(1000, timeout_cb, NULL);
-
+        g_signal_connect(G_OBJECT(app_icon), "popup-menu", G_CALLBACK(popup_menu_cb), menu);
+        g_signal_connect(G_OBJECT(app_icon), "size-changed", G_CALLBACK(resize_cb), NULL);
+        g_signal_connect(G_OBJECT(app_icon), "activate", G_CALLBACK(icon_activate), NULL);
+        gtk_status_icon_set_visible(app_icon, TRUE);
+    }
+    g_free(envp);
+    g_timeout_add(refresh_rate, timeout_cb, NULL);
     gtk_main();
-
     return 0;
 }
