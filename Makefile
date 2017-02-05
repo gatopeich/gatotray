@@ -27,13 +27,13 @@ install: gatotray
 	install -vD gatotray.xpm /usr/share/icons
 	install -vD gatotray.desktop /usr/share/applications/gatotray.desktop
 
-gatotray.deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
+gatotray-3.0.deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
 	strip gatotray
 	install -vD gatotray root/usr/bin/gatotray
 	install -vD gatotray.desktop root/usr/share/applications/gatotray.desktop
 	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
 	install -vD Debian-Control root/DEBIAN/control
-	dpkg -b root gatotray.deb
+	dpkg -b root $@
 
 # Additional: .api file for SciTE users...
 .api: $(wildcard *.h)
