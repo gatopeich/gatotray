@@ -186,7 +186,7 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
 }
 
 int
-timeout_cb( gpointer data)
+timeout_cb (gpointer data)
 {
     timer++;
     int i = hist_size-1;
@@ -224,13 +224,15 @@ timeout_cb( gpointer data)
     if (!screensaver)
         gtk_status_icon_set_tooltip(app_icon, tool_tip);
 
-    return TRUE;
+    // Re-add every time to handle changes in refresh_rate
+    g_timeout_add(refresh_rate, timeout_cb, NULL);
+    return FALSE;
 }
 
 void
 open_website()
 {
-    char *argv[] = {"xdg-open", "https://code.google.com/p/gatotray/", NULL};
+    char *argv[] = {"xdg-open", "https://bitbucket.org/gatopeich/gatotray", NULL};
     g_spawn_async( NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
 }
 
