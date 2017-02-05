@@ -52,8 +52,8 @@ int width = 0, hist_size = 0, timer = 0;
 GdkPixmap *pixmap = NULL;
 GtkStatusIcon *app_icon = NULL;
 GdkWindow *screensaver = NULL;
-
 gchar* tool_tip = NULL;
+gchar* abs_argv0;
 
 static void
 popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* menu)
@@ -62,8 +62,8 @@ popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* men
 }
 
 GdkGC *gc = NULL;
-GdkPoint Termometer[] = {{2,16},{2,2},{3,1},{4,1},{5,2},{5,16},{6,17},{6,19},{5,20},
-    {2,20},{1,19},{1,17},{2,16}};
+GdkPoint Termometer[] = {{2,15},{2,2},{3,1},{4,1},{5,2},{5,15},{6,16},{6,19},{5,20},
+    {2,20},{1,19},{1,16},{2,15}};
 #define Termometer_tube_size 6 /* first points are the 'tube' */
 #define Termometer_tube_start 2
 #define Termometer_tube_end 16
@@ -215,14 +215,14 @@ timeout_cb (gpointer data)
     g_free(tool_tip);
     tool_tip = g_strdup_printf(
         history[0].temp ? "CPU %d%% busy @ %d MHz, %d%% I/O wait\nTemperature: %d°C"
-                        : "CPU %d%% busy @ %d MHz, %d%%wa"
+                        : "CPU %d%% busy @ %d MHz, %d%% I/O wait"
             , history[0].cpu.usage*100/SCALE, freq/1000, history[0].cpu.iowait*100/SCALE
             , history[0].temp);
 
-    redraw();
-
-    if (!screensaver)
+    if (app_icon)
         gtk_status_icon_set_tooltip(app_icon, tool_tip);
+
+    redraw();
 
     // Re-add every time to handle changes in refresh_rate
     g_timeout_add(refresh_rate, timeout_cb, NULL);
@@ -232,8 +232,18 @@ timeout_cb (gpointer data)
 void
 open_website()
 {
-    char *argv[] = {"xdg-open", "https://bitbucket.org/gatopeich/gatotray", NULL};
-    g_spawn_async( NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+    g_spawn_command_line_async("xdg-open https://bitbucket.org/gatopeich/gatotray", NULL);
+}
+
+void
+install_screensaver()
+{
+    gchar* cmd = g_strdup_printf(
+        "sh -c \"(echo programs: %s -root;echo mode: one;echo selected: 0) >> %s/.xscreensaver"
+        " && xscreensaver-command -demo\"", abs_argv0, g_get_home_dir());
+    g_message("%s",cmd);
+    g_spawn_command_line_async(cmd, NULL);
+    g_free(cmd);
 }
 
 GRegex* regex_position;
@@ -280,6 +290,15 @@ icon_activate(GtkStatusIcon *app_icon, gpointer user_data)
 int
 main( int argc, char *argv[] )
 {
+    abs_argv0 = NULL;
+    if (!g_file_test(argv[0], G_FILE_TEST_EXISTS)||g_file_test(argv[0], G_FILE_TEST_IS_DIR))
+        abs_argv0 = g_find_program_in_path(argv[0]);
+    if (!abs_argv0) {
+        GFile* gf = g_file_new_for_commandline_arg(argv[0]);
+        abs_argv0 = g_file_get_path(gf);
+        g_object_unref(gf);
+    }
+
     gtk_init (&argc, &argv);
     GdkPixbuf* xpm = gdk_pixbuf_new_from_xpm_data(gatotray_xpm);
     gtk_window_set_default_icon(xpm);
@@ -321,6 +340,11 @@ main( int argc, char *argv[] )
         g_signal_connect(G_OBJECT (menuitem), "activate", open_website, NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
 
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_DIALOG_WARNING, NULL);
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Use as screensaver");
+        g_signal_connect(G_OBJECT (menuitem), "activate", install_screensaver, NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
+
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),
                               gtk_separator_menu_item_new());
 
@@ -338,6 +362,7 @@ main( int argc, char *argv[] )
         g_signal_connect(G_OBJECT(app_icon), "size-changed", G_CALLBACK(resize_cb), NULL);
         g_signal_connect(G_OBJECT(app_icon), "activate", G_CALLBACK(icon_activate), NULL);
         gtk_status_icon_set_visible(app_icon, TRUE);
+        gtk_status_icon_set_tooltip(app_icon, GATOTRAY_VERSION);
     }
     g_free(envp);
     g_timeout_add(refresh_rate, timeout_cb, NULL);
