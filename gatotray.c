@@ -53,6 +53,8 @@ GdkPixmap *pixmap = NULL;
 GtkStatusIcon *app_icon = NULL;
 GdkWindow *screensaver = NULL;
 
+gchar* tool_tip = NULL;
+
 static void
 popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* menu)
 {
@@ -68,6 +70,7 @@ GdkPoint Termometer[] = {{2,16},{2,2},{3,1},{4,1},{5,2},{5,16},{6,17},{6,19},{5,
 #define Termometer_scale 22
 GdkPoint termometer_tube[Termometer_tube_size];
 GdkPoint termometer[sizeof(Termometer)/sizeof(*Termometer)];
+GdkFont *font = NULL;
 
 void redraw(void)
 {
@@ -118,20 +121,31 @@ void redraw(void)
     }
 
     GdkPixbuf *pixbuf = gdk_pixbuf_get_from_drawable(NULL, pixmap, NULL, 0, 0, 0, 0, width, width);
-    if (pref_transparent) { // TODO: Draw directly with alpha!
-        GdkPixbuf* new = gdk_pixbuf_add_alpha(pixbuf, TRUE
-            , bg_color.red>>8, bg_color.green>>8, bg_color.blue>>8);
-        g_object_unref(pixbuf);
-        pixbuf = new;
-    }
     if (screensaver)
     {
         int w = gdk_window_get_width(screensaver), h = gdk_window_get_height(screensaver);
-        // g_message("%dx%d",w,h);
-        GdkPixbuf* scaled = gdk_pixbuf_scale_simple (pixbuf, w*.9, h*.9, GDK_INTERP_NEAREST);
-        gdk_draw_pixbuf (screensaver, NULL, scaled, 0,0, w/20,h/20, -1,-1, GDK_RGB_DITHER_NONE,0,0);
+        int size = MIN(w,h), x = (w-size)/2, y = (h-size)/2;
+
+        GdkPixbuf* scaled = gdk_pixbuf_scale_simple (pixbuf, size, size, GDK_INTERP_TILES);
+        PangoContext *pango = gdk_pango_context_get_for_screen (gdk_window_get_screen(screensaver));
+        PangoLayout *pl = pango_layout_new (pango);
+        pango_layout_set_width (pl, size * PANGO_SCALE);
+        pango_layout_set_alignment (pl, PANGO_ALIGN_CENTER);
+        pango_layout_set_text (pl, tool_tip ? tool_tip : GATOTRAY_VERSION, -1);
+
+        gdk_draw_pixbuf (screensaver, NULL, scaled, 0,0, x,y, -1,-1, GDK_RGB_DITHER_NONE,0,0);
+        gdk_draw_layout (screensaver, gc, x,y, pl);
+
         g_object_unref(scaled);
+        g_object_unref(pl);
+        g_object_unref(pango);
     } else {
+        if (pref_transparent) { // TODO: Draw directly with alpha!
+            GdkPixbuf* new = gdk_pixbuf_add_alpha(pixbuf, TRUE
+                , bg_color.red>>8, bg_color.green>>8, bg_color.blue>>8);
+            g_object_unref(pixbuf);
+            pixbuf = new;
+        }
         gtk_status_icon_set_from_pixbuf(GTK_STATUS_ICON(app_icon), pixbuf);
     }
     g_object_unref(pixbuf);
@@ -164,6 +178,8 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
             termometer_tube[i].y = termometer[i].y;
         }
     }
+    if (!font)
+        font = gdk_font_load("-*-fixed-medium-r-*-*-12-*-*-*-*-*-*-*");
 
     redraw();
     return TRUE;
@@ -196,17 +212,18 @@ timeout_cb( gpointer data)
                         (scaling_max_freq-scaling_min_freq);
     history[0].temp = cpu_temperature();
 
-    redraw();
-
-    if (!screensaver) {
-        gchar* tip =
-        g_strdup_printf(history[0].temp? "CPU %d%% busy @ %d MHz, %d%%wa\nTemperature: %d C"
-            : "CPU %d%% busy @ %d MHz, %d%%wa"
+    g_free(tool_tip);
+    tool_tip = g_strdup_printf(
+        history[0].temp ? "CPU %d%% busy @ %d MHz, %d%% I/O wait\nTemperature: %d°C"
+                        : "CPU %d%% busy @ %d MHz, %d%%wa"
             , history[0].cpu.usage*100/SCALE, freq/1000, history[0].cpu.iowait*100/SCALE
             , history[0].temp);
-        gtk_status_icon_set_tooltip(app_icon, tip);
-        g_free(tip);        
-    }
+
+    redraw();
+
+    if (!screensaver)
+        gtk_status_icon_set_tooltip(app_icon, tool_tip);
+
     return TRUE;
 }
 
@@ -276,20 +293,20 @@ main( int argc, char *argv[] )
     gchar** envp = g_get_environ();
     const gchar* wid = g_environ_getenv(envp,"XSCREENSAVER_WINDOW");
     if (wid || g_str_has_suffix(argv[0], "xgatotray")
-            || (argc>1 && g_str_has_suffix(argv[1], "-root"))) {
+            || (argc>1 && g_str_has_prefix(argv[1], "-root"))) {
         if (wid)
             screensaver = gdk_window_foreign_new(g_ascii_strtoull(wid, NULL, 16));
         else {
             // screensaver = GDK_WINDOW(gdk_get_default_root_window());
             GdkWindowAttr attr = {
-                "xgatotray", 0, 0,0,300,300, GDK_INPUT_OUTPUT,NULL,NULL,GDK_WINDOW_TOPLEVEL
+                "xgatotray", 0, 0,0,400,300, GDK_INPUT_OUTPUT,NULL,NULL,GDK_WINDOW_TOPLEVEL
                 , NULL, NULL, NULL, FALSE, GDK_WINDOW_TYPE_HINT_NORMAL
             };
             screensaver = gdk_window_new(NULL, &attr, GDK_WA_TITLE);
             // gdk_window_fullscreen(GDK_WINDOW(screensaver));
             gdk_window_show(GDK_WINDOW(screensaver));
         }
-        resize_cb(NULL, width=100, NULL);
+        resize_cb(NULL, width = 4*Termometer_scale, NULL);
     } else {
         app_icon = gtk_status_icon_new();
         resize_cb(app_icon, width, NULL);
