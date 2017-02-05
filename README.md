@@ -1,3 +1,4 @@
+# gatotray #
 gatotray is a tiny CPU monitor displaying several stats graphically
 (usage, temperature, frequency) in small space, and tight on resources.
 
@@ -64,7 +65,7 @@ Script "watchRSS" used to track memory and CPU usage in a simple way follows:
 #!sh
 
 #!/bin/bash
-$* &
+$@ &
 pid=$!
 while watch="`ps -o bsdtime $pid` `grep RSS /proc/$pid/status`"; do
 	[ "$watch" != "$old" ] && echo `ps -o etime $pid` CPU$watch
