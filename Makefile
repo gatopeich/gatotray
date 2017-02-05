@@ -18,7 +18,7 @@ all: $(targets)
 
 gatotray: gatotray.o
 
-gatotray.bin32: gatotray.o32
+gatotray.i386: gatotray.o.i386
 	$(LD) $(LDLIBS) -m32 -o $@ $^
 
 install: gatotray
@@ -27,17 +27,13 @@ install: gatotray
 	install -vD gatotray.xpm /usr/share/icons
 	install -vD gatotray.desktop /usr/share/applications/gatotray.desktop
 
-gatotray.deb: gatotray gatotray.xpm xgatotray.desktop Debian-Control
+gatotray.deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
 	strip gatotray
-	#install -vD gatotray root/opt/extras.ubuntu.com/gatotray/gatotray
 	install -vD gatotray root/usr/bin/gatotray
-	install -vD xgatotray.desktop root/usr/share/applications/gatotray.desktop
+	install -vD gatotray.desktop root/usr/share/applications/gatotray.desktop
 	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
 	install -vD Debian-Control root/DEBIAN/control
 	dpkg -b root gatotray.deb
-	
-xgatotray: xgatotray.o
-
 
 # Additional: .api file for SciTE users...
 .api: $(wildcard *.h)
@@ -56,11 +52,11 @@ clean:
 %.o: %.c %.d
 	$(CC) -c $(CPPFLAGS) $(CFLAGS) -o $@ $<	
 
-%.bin32: %.o32
+%.i386: %.o.i386
 	$(LD) -m32 -o $@ $^
 
-%.o32: %.c %.d
-	$(CC) -c $(CPPFLAGS) $(CFLAGS) -m32 -o $@ $<
+%.o.i386: %.c %.d
+	$(CC) -m32 -c $(CPPFLAGS) $(CFLAGS) -o $@ $<
 
 # Let %.o & %.d depend on %.c included files:
 %.d: %.c
