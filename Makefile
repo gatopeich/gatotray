@@ -23,15 +23,15 @@ gatotray.bin32: gatotray.o32
 
 install: gatotray
 	strip $^
-	install -vD $^ /usr/bin
+	install -vD $^ /usr/local/bin
 	install -vD gatotray.xpm /usr/share/icons
-	install -vD xgatotray.desktop /usr/share/applications/screensavers/xgatotray.desktop
+	install -vD gatotray.desktop /usr/share/applications/gatotray.desktop
 
 gatotray.deb: gatotray gatotray.xpm xgatotray.desktop Debian-Control
 	strip gatotray
 	#install -vD gatotray root/opt/extras.ubuntu.com/gatotray/gatotray
 	install -vD gatotray root/usr/bin/gatotray
-	install -vD xgatotray.desktop root/usr/share/applications/screensavers/xgatotray.desktop
+	install -vD xgatotray.desktop root/usr/share/applications/gatotray.desktop
 	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
 	install -vD Debian-Control root/DEBIAN/control
 	dpkg -b root gatotray.deb
