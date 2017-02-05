@@ -1,5 +1,7 @@
-gatotray is a tiny CPU monitor displaying several stats graphically
+# gatotray #
+`gatotray` is a tiny CPU monitor displaying several stats graphically
 (usage, temperature, frequency) in small space, and tight on resources.
+Since version 3.0, It can also run as a screensaver.
 
 
 ## License ##
@@ -16,6 +18,9 @@ Briefly: Use it however suits you better and just give me due credit.
 * Designed to run continuously and give a good idea of the CPU's status in a
   glimpse.
 
+* Can run as a `xscreensaver` plugin, so you can see your CPUs at work from a
+  prudential distance.
+
 * Works in almost any Linux desktop, as long as it is Freedesktop compatible:
   XFCE, GNOME, GTK+, KDE, and more.
 
@@ -28,11 +33,12 @@ Briefly: Use it however suits you better and just give me due credit.
 
 * Tooltip shows current stats in text form.
 
-* On click, it opens a 'top' window with detailed system usage.
+* On click, it opens a `top` window with detailed system usage. This command can
+  be customized as a shortcut to your favorite monitoring tool.
 
 * Preferences dialog allows customization of colors and options.
 
-* Transparent background for better integration.
+* Transparent background for better desktop/theme integration.
 
 
 ## Performance & Resource Consumption ##
@@ -64,7 +70,7 @@ Script "watchRSS" used to track memory and CPU usage in a simple way follows:
 #!sh
 
 #!/bin/bash
-$* &
+$@ &
 pid=$!
 while watch="`ps -o bsdtime $pid` `grep RSS /proc/$pid/status`"; do
 	[ "$watch" != "$old" ] && echo `ps -o etime $pid` CPU$watch
