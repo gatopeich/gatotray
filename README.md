@@ -51,19 +51,19 @@ different versions running on:
 
 After 7 hours this is a pretty version of what we get with the command
 "ps -o bsdtime,rss,etime,pid,command -C gatotray|sort -n".
-
+```
 CPU%  CPUtime    RSS  ElapsedTime  Version and options:
 0.17     0:45   6984     07:11:57  gatotray v2.0 64 bits opaque 21x21
 0.19     0:48   7464     07:11:14  gatotray v2.0 64 bits transparent 21x21
 0.19     0:49   6176     07:10:13  gatotray v2.0 32 bits opaque 21x21
 0.21     0:54   6560     07:09:48  gatotray v2.0 32 bits transparent 21x21
-
+```
 So gatotray v2.0 eats roughly less than 6 bogomips in its several configurations
 , transparency costing ~10% additional CPU, and running the 32 bit version
 saving a bit under 1kB RSS memory.
 
 
-***
+### watchRSS ###
 Script "watchRSS" used to track memory and CPU usage in a simple way follows:
 
 ```
