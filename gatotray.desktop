@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=gatotray
+Comment=CPU & Temperature monitor by gatopeich
+Icon=gatotray
+Exec=gatotray
+TryExec=gatotray
+StartupNotify=false
+Terminal=false
+Type=Application
+Categories=Application;Screensaver;
