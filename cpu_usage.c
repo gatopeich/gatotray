@@ -131,7 +131,7 @@ cpu_temperature(void)
 
     int T = 0;
     static FILE* temperature_file = NULL;
-    static const char* format;
+    static const char* format = "temperature: %d C"; // ACPI format by default
     if (!temperature_file) {
         if ((temperature_file = fopen("/sys/class/hwmon/hwmon0/device/temp1_input", "r"))
          || (temperature_file = fopen("/sys/class/hwmon/hwmon1/device/temp1_input", "r"))
@@ -142,23 +142,49 @@ cpu_temperature(void)
          || (temperature_file = fopen("/proc/acpi/thermal_zone/THM0/temperature", "r"))
          || (temperature_file = fopen("/proc/acpi/thermal_zone/THRM/temperature", "r")))
         { 
-            format = "temperature: %d C"; // ACPI format
-            if (!fscanf(temperature_file, format, &T)) {
-                format = "%d";
-                rewind(temperature_file);
-                if (!fscanf(temperature_file, format, &T))
-                    goto error;
-            }
-        } else goto error;
+            if (1 != fscanf(temperature_file, format, &T)) 
+                format = "%d"; // Fallback to simple int
+        } else {
+            unavailable = TRUE;
+            return 0;
+        }
     }
 
     rewind(temperature_file);
     fflush(temperature_file);
-    if (!fscanf(temperature_file, format, &T)) goto error;
-    if (T>1000) T=(T+500)/1000;
-    return T;
+    if (1==fscanf(temperature_file, format, &T)) {
+        if (T>1000) T=(T+500)/1000;
+        return T;        
+    }
     
-    error:
     unavailable = TRUE;
     return 0;
+}
+
+typedef struct { int Total, Free, Available; } MemInfo;
+MemInfo meminfo = {0};
+MemInfo
+mem_info(void)
+{
+    static gboolean unavailable = FALSE;
+    if (unavailable)
+        return meminfo;
+
+    static FILE* proc_meminfo = NULL;
+    if (proc_meminfo || (proc_meminfo = fopen("/proc/meminfo", "r")))
+    { 
+        if (2==fscanf(proc_meminfo, "MemTotal: %d kB\nMemFree: %d kB\n"
+            , &meminfo.Total, &meminfo.Free))
+        {
+            if (1!=fscanf(proc_meminfo, "MemAvailable: %d kB\n", &meminfo.Available))
+                meminfo.Available = meminfo.Free; // Fallback on older kernels
+            rewind(proc_meminfo);
+            fflush(proc_meminfo);
+            return meminfo;
+        }
+        fclose(proc_meminfo);
+    }
+    error(0, errno, "Can't read /proc/meminfo");
+    unavailable = TRUE;
+    return meminfo;
 }
