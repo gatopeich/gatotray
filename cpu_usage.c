@@ -9,10 +9,18 @@
  *          available since Linux 2.6.26.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <error.h>
 #include <errno.h>
 
-typedef unsigned long long ull;
+#ifdef __G_LIB_H__
+#define error(_s, _e, fmt, args...) do { \
+    g_message("ERROR %d:" fmt, _e, ##args); \
+    if (_s) exit(_s); \
+} while(0)
+#endif
+
+typedef unsigned long long u64;
 
 typedef struct {
     int usage;
@@ -23,23 +31,23 @@ CPU_Usage
 cpu_usage(int scale)
 {
     /* static stuff */
-    static ull cpu_busy_prev=0;
-    static ull cpu_iowait_prev=0;
-    static ull cpu_total_prev=0;
+    static u64 cpu_busy_prev=0;
+    static u64 cpu_iowait_prev=0;
+    static u64 cpu_total_prev=0;
 
     static FILE *proc_stat = NULL;
-    if( !proc_stat ) {
-        if( !(proc_stat = fopen("/proc/stat", "r")))
+    if (!proc_stat) {
+        if (!(proc_stat = fopen("/proc/stat", "r")))
             error(1, errno, "Could not open /proc/stat");
     }
 
-    ull busy, nice, system, idle, total;
-    ull iowait=0, irq=0, softirq=0; /* New in Linux 2.6 */
+    u64 busy, nice, system, idle, total;
+    u64 iowait=0, irq=0, softirq=0; /* New in Linux 2.6 */
     if( 4 > fscanf(proc_stat, "cpu %Lu %Lu %Lu %Lu %Lu %Lu %Lu",
                     &busy, &nice, &system, &idle, &iowait, &irq, &softirq))
         error(1, errno, "Can't seem to read /proc/stat properly");
-    fflush(proc_stat);
     rewind(proc_stat);
+    fflush(proc_stat); // Otherwise rewind is not effective
 
     busy += nice+system+irq+softirq;
     total = busy+idle+iowait;
@@ -47,14 +55,12 @@ cpu_usage(int scale)
     CPU_Usage cpu;
 
     if( busy > cpu_busy_prev )
-        cpu.usage = (ull)scale * (busy - cpu_busy_prev)
-                    / (total - cpu_total_prev);
+        cpu.usage = (u64)scale * (busy - cpu_busy_prev) / (total - cpu_total_prev);
     else
         cpu.usage = 0;
 
     if( iowait > cpu_iowait_prev )
-        cpu.iowait = (ull)scale * (iowait - cpu_iowait_prev)
-                    / (total - cpu_total_prev);
+        cpu.iowait = (u64)scale * (iowait - cpu_iowait_prev) / (total - cpu_total_prev);
     else
         cpu.iowait = 0;
 
@@ -65,69 +71,56 @@ cpu_usage(int scale)
     return cpu;
 }
 
-int scaling_max_freq = 1;
+int
+file_read_int(const char* file, int on_error)
+{
+    FILE* fp = fopen(file, "r");
+    if (fp)
+    {
+        int i;
+        if (fscanf(fp, "%d", &i))
+            return i;
+    }
+    error(0, errno, "Can't read uint from %s", file);
+    return on_error;
+}
+
 int scaling_min_freq = 0;
 int scaling_cur_freq = 0;
+int scaling_max_freq = 0;
 
 int
 cpu_freq(void)
 {
-    static int active = 0;
-    static int errorstate = 0;
-    FILE *fp;
+    if (scaling_cur_freq < 0)
+        return 1; // Do not insist
 
-    if( !active ) /* Init time, read max & min */
-    {
-        fp = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq", "r");
-        if(!fp) {
-            if(!errorstate) {
-                error(0, errno, "Can't get scaling frequencies");
-                errorstate = 1;
-            }
-            return 0;
-        }
-        if( 1 != fscanf(fp, "%u", &scaling_min_freq) ) {
-            fclose(fp);
-            scaling_min_freq = 0;
-            error(0, 0, "Can't get min scaling frequency");
-            return 0;
-        }
-        fclose(fp);
-        fp = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq", "r");
-        if(fp)
-        {
-            if( 1 != fscanf(fp, "%u", &scaling_max_freq) ) {
-                fclose(fp);
-                scaling_max_freq = 1;
-                scaling_min_freq = 0;
-                error(0, 0, "Can't get max scaling frequency");
-                return 0;
-            }
-            fclose(fp);
-            if( scaling_max_freq <= scaling_min_freq ) {
-                scaling_max_freq = 1;
-                scaling_min_freq = 0;
-                error(0, 0, "Wrong scaling frequencies!?");
-                return 0;
-            }
-        }
-        active = 1;
-        errorstate = 1;
+    static FILE *cur_freq_file = NULL;
+    if (!cur_freq_file) {
+        cur_freq_file = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq","r"); 
     }
-
-    fp = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", "r");
-    if(!fp || 1 != fscanf(fp, "%u", &scaling_cur_freq) )
-    {
-        error(0, 0, "Can't get current processor frequency");
-        scaling_max_freq = 1;
-        scaling_min_freq = 0;
-        scaling_cur_freq = 0;
-        active = 0;
+    if (cur_freq_file) {
+        rewind(cur_freq_file);
+        fflush(cur_freq_file);
+        if (fscanf(cur_freq_file, "%u", &scaling_cur_freq) == 1) {
+            if (scaling_max_freq) {
+                if (scaling_cur_freq < scaling_min_freq)
+                    scaling_min_freq = scaling_cur_freq;
+                if (scaling_cur_freq > scaling_max_freq)
+                    scaling_max_freq = scaling_cur_freq;
+            } else {
+                scaling_min_freq =
+                    file_read_int("/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq", scaling_cur_freq);
+                scaling_max_freq =
+                    file_read_int("/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq", scaling_cur_freq);
+            }
+            return scaling_cur_freq;
+        }
+        fclose(cur_freq_file);
+        cur_freq_file = NULL;
     }
-
-    if(fp) fclose(fp);
-
-    return scaling_cur_freq;
+    scaling_cur_freq = -1; // Do not waste efforts retrying
+    return 1;
 }
 
 int
@@ -148,8 +141,8 @@ cpu_temperature(void)
          || (temperature_file = fopen("/proc/acpi/thermal_zone/THM/temperature", "r"))
          || (temperature_file = fopen("/proc/acpi/thermal_zone/THM0/temperature", "r"))
          || (temperature_file = fopen("/proc/acpi/thermal_zone/THRM/temperature", "r")))
-        {
-            format = "temperature: %d C"; // ACPI style
+        { 
+            format = "temperature: %d C"; // ACPI format
             if (!fscanf(temperature_file, format, &T)) {
                 format = "%d";
                 rewind(temperature_file);
