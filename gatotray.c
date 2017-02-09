@@ -52,7 +52,7 @@ int width = 0, hist_size = 0, timer = 0;
 GdkPixmap *pixmap = NULL;
 GtkStatusIcon *app_icon = NULL;
 GdkWindow *screensaver = NULL;
-gchar* tool_tip = NULL;
+GString* info_text = NULL;
 gchar* abs_argv0;
 
 static void
@@ -131,7 +131,7 @@ void redraw(void)
         PangoLayout *pl = pango_layout_new (pango);
         pango_layout_set_width (pl, size * PANGO_SCALE);
         pango_layout_set_alignment (pl, PANGO_ALIGN_CENTER);
-        pango_layout_set_text (pl, tool_tip ? tool_tip : GATOTRAY_VERSION, -1);
+        pango_layout_set_text (pl, info_text ? info_text->str : GATOTRAY_VERSION, -1);
 
         gdk_draw_pixbuf (screensaver, NULL, scaled, 0,0, x,y, -1,-1, GDK_RGB_DITHER_NONE,0,0);
         gdk_draw_layout (screensaver, gc, x,y, pl);
@@ -212,15 +212,20 @@ timeout_cb (gpointer data)
                         (scaling_max_freq-scaling_min_freq);
     history[0].temp = cpu_temperature();
 
-    g_free(tool_tip);
-    tool_tip = g_strdup_printf(
-        history[0].temp ? "CPU %d%% busy @ %d MHz, %d%% I/O wait\nTemperature: %d°C"
-                        : "CPU %d%% busy @ %d MHz, %d%% I/O wait"
-            , history[0].cpu.usage*100/SCALE, freq/1000, history[0].cpu.iowait*100/SCALE
-            , history[0].temp);
+    const MemInfo mi = mem_info();
+
+    if (!info_text)
+        info_text = g_string_new(NULL);
+    g_string_printf(info_text, "CPU %d%% busy @ %d MHz, %d%% I/O wait"
+            , history[0].cpu.usage*100/SCALE, freq/1000, history[0].cpu.iowait*100/SCALE);
+    if (history[0].temp)
+        g_string_append_printf (info_text, "\nTemperature: %d°C", history[0].temp);
+    if (mi.Total)
+        g_string_append_printf (info_text, "\nUsed RAM: %d%% of %d MB"
+            , 100-((mi.Available?mi.Available:mi.Free)*100/mi.Total), mi.Total>>10);
 
     if (app_icon)
-        gtk_status_icon_set_tooltip(app_icon, tool_tip);
+        gtk_status_icon_set_tooltip(app_icon, info_text->str);
 
     redraw();
 
