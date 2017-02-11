@@ -189,22 +189,37 @@ int
 timeout_cb (gpointer data)
 {
     timer++;
-    int i = hist_size-1;
-    while(i > 0) /* 'Smear' historic values */
+    for(int i = hist_size-1; i > 0; i--)
     {
-        #define smear(a,b) do{ \
-        int _a = a, _b = b, _factor = i*2; \
-        if( _a < _b ) _a++; \
-        a = ( _a*(_factor-1) + _b )/_factor; \
-        } while(0)
+        const int ONE = 1<<10; // 10-bits fixed-point
+        int x = ONE * i / hist_size;
+        // Persistence 'P' is higher for farther history points, so that they take
+        // longer to blend with newer data. Ideally we have:
+        // - High P (~1.0) at the end of the history
+        // - Low P (~0) at the most recent point
+        // - P grows fast on the first half, then slower on the second.
+        // Best formula I found so far is: P = (c+1) - c(c+1)/(x+c)
+        // Since (1/x) is the log derivative, I call this a "pseudo-logarithmic time scale"
+        // Examples:
+        // - Linear: P = x;
+        // - Cuadratic: P = x(2-x) == x*(2*ONE-x)/ONE
+        // ... a-(b/(x+c)): a = b/c ; a = 1 + (b/(1+c))
+        // b/c = 1+ b/(1+c) :: b = c + b/(1+1/c) :: b/c = c+1 :: { b = c(c+1), a = c+1 }
+        // a = c+1, b = a*c
+        // c = 1/4 --> a = 5/4, b = 5/16 ===> 5/4 - (5/(16x+4))
+        // Taking C as a (negative) power of 2 makes all this math fast & accurate with fixed-point
+        const int C = ONE/4, A = C+ONE, B = A*C/ONE;
+        int Persistence = A - (B*ONE/(x+C));
+        #define blend(dst, src) do{ \
+            dst = (Persistence*dst + (ONE-Persistence)*src) / ONE; \
+        }while(0)
 
-        smear(history[i].cpu.usage, history[i-1].cpu.usage);
-        smear(history[i].cpu.iowait, history[i-1].cpu.iowait);
-        smear(history[i].freq, history[i-1].freq);
-        smear(history[i].temp, history[i-1].temp);
+        blend(history[i].cpu.usage, history[i-1].cpu.usage);
+        blend(history[i].cpu.iowait, history[i-1].cpu.iowait);
+        blend(history[i].freq, history[i-1].freq);
+        blend(history[i].temp, history[i-1].temp);
 
-        #undef smear
-        i--;
+        #undef blend
     }
     history[0].cpu = cpu_usage(SCALE);
     int freq = cpu_freq();
@@ -224,8 +239,12 @@ timeout_cb (gpointer data)
         g_string_append_printf (info_text, "\nUsed RAM: %d%% of %d MB"
             , 100-((mi.Available?mi.Available:mi.Free)*100/mi.Total), mi.Total>>10);
 
-    if (app_icon)
-        gtk_status_icon_set_tooltip(app_icon, info_text->str);
+    // Tooltip should not be refreshed too often, otherwise it never shows
+    static gint64 last_tooltip_update = 0;
+    if (app_icon && (g_get_monotonic_time()-last_tooltip_update) > G_USEC_PER_SEC) {
+        gtk_status_icon_set_tooltip (app_icon, info_text->str);
+        last_tooltip_update = g_get_monotonic_time();
+    }
 
     redraw();
 
