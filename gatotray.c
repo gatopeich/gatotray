@@ -1,4 +1,7 @@
-#define GATOTRAY_VERSION "gatotray v3.1"
+#ifndef VERSION
+#define VERSION "3.0"
+#endif
+#define GATOTRAY_VERSION "gatotray v" VERSION
 /*
  * (c) 2011 by gatopeich, licensed under a Creative Commons Attribution 3.0
  * Unported License: http://creativecommons.org/licenses/by/3.0/
@@ -63,13 +66,13 @@ popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* men
 }
 
 GdkGC *gc = NULL;
-GdkPoint Termometer[] = {{2,15},{2,2},{3,1},{4,1},{5,2},{5,15},{6,16},{6,19},{5,20},
-    {2,20},{1,19},{1,16},{2,15}};
-#define Termometer_tube_size 6 /* first points are the 'tube' */
+GdkPoint Termometer[] = {{2,16},{2,2},{3,1},{4,1},{5,2},{5,16},{6,17},{6,19},{5,20},
+    {2,20},{1,19},{1,17},{2,16}};
+#define Termometer_tube_points 6 /* first points are the 'tube' */
 #define Termometer_tube_start 2
 #define Termometer_tube_end 16
-#define Termometer_scale 22
-GdkPoint termometer_tube[Termometer_tube_size];
+#define Termometer_scale 21
+GdkPoint termometer_tube[Termometer_tube_points];
 GdkPoint termometer[G_N_ELEMENTS(Termometer)];
 
 void redraw(void)
@@ -112,9 +115,9 @@ void redraw(void)
         if( T<99 )
         {
             termometer_tube[0].y = (T*termometer[1].y+(99-T)*termometer[0].y)/99;
-            termometer_tube[Termometer_tube_size-1].y = termometer_tube[0].y;
+            termometer_tube[Termometer_tube_points-1].y = termometer_tube[0].y;
             gdk_gc_set_rgb_fg_color(gc, &bg_color);
-            gdk_draw_polygon(pixmap, gc, TRUE, termometer_tube, Termometer_tube_size);
+            gdk_draw_polygon(pixmap, gc, TRUE, termometer_tube, Termometer_tube_points);
         }
         gdk_gc_set_rgb_fg_color(gc, &fg_color);
         gdk_draw_lines(pixmap, gc, termometer, G_N_ELEMENTS(termometer));
@@ -173,7 +176,7 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
     {
         termometer[i].x = Termometer[i].x*newsize/Termometer_scale;
         termometer[i].y = Termometer[i].y*newsize/Termometer_scale;
-        if(i<Termometer_tube_size) {
+        if(i<Termometer_tube_points) {
             termometer_tube[i].x = termometer[i].x;
             termometer_tube[i].y = termometer[i].y;
         }
