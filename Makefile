@@ -5,10 +5,13 @@
 #  Briefly: Use it however suits you better and just give me due credit.
 #
 ### Changelog:
+# V3.1: Bugfixes. Versioning
+# V3.0: Screensaver support.
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-CFLAGS := -std=c99 -Wall -O3 -g3 $(CFLAGS)
+VERSION := 3.1
+CFLAGS := -std=c99 -Wall -O3 -g3 -DVERSION=\"$(VERSION)\" $(CFLAGS)
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
 LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
 
@@ -27,7 +30,8 @@ install: gatotray
 	install -vD gatotray.xpm /usr/share/icons
 	install -vD gatotray.desktop /usr/share/applications/gatotray.desktop
 
-gatotray-3.0.deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
+deb: gatotray-$(VERSION).deb
+gatotray-$(VERSION).deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
 	strip gatotray
 	install -vD gatotray root/usr/bin/gatotray
 	install -vD gatotray.desktop root/usr/share/applications/gatotray.desktop
