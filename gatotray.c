@@ -102,8 +102,8 @@ void redraw(void)
         gdk_draw_line(pixmap, gc, i, bottom-(h->cpu.usage*width/SCALE), i, bottom);
     }
 
-    int T = history[0].temp;
-    if (T) /* Hide if 0, meaning it could not be read */
+    int T;
+    if (pref_thermometer && (T= history[0].temp)) /* if temp=0, it could not be read */
     if ( T<pref_temp_alarm || (timer&1) ) /* Blink when hot! */
     {
         /* scale temp from 5~105 degrees Celsius to 0~100*/
@@ -366,12 +366,11 @@ main( int argc, char *argv[] )
         GtkWidget* menu = gtk_menu_new();
         GtkWidget* menuitem;
 
-        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_ABOUT, NULL);
-        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Open " GATOTRAY_VERSION " website");
-        g_signal_connect(G_OBJECT (menuitem), "activate", open_website, NULL);
-        gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_PREFERENCES, NULL);
+        g_signal_connect(G_OBJECT (menuitem), "activate", show_pref_dialog, NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
-        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_DIALOG_WARNING, NULL);
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_FULLSCREEN, NULL);
         gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Use as screensaver");
         g_signal_connect(G_OBJECT (menuitem), "activate", install_screensaver, NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
@@ -379,9 +378,10 @@ main( int argc, char *argv[] )
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),
                               gtk_separator_menu_item_new());
 
-        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_PREFERENCES, NULL);
-        g_signal_connect(G_OBJECT (menuitem), "activate", show_pref_dialog, NULL);
-        gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_ABOUT, NULL);
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Open " GATOTRAY_VERSION " website");
+        g_signal_connect(G_OBJECT (menuitem), "activate", open_website, NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_QUIT, NULL);
         g_signal_connect(G_OBJECT(menuitem), "activate", G_CALLBACK(gtk_main_quit), NULL);
