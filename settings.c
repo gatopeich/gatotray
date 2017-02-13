@@ -13,6 +13,17 @@
 static gchar* pref_filename =  "gatotrayrc";
 static GKeyFile* pref_file = NULL;
 
+gboolean pref_transparent = TRUE;
+gboolean pref_thermometer = TRUE;
+typedef struct {
+    const gchar* description;
+    gboolean* value;
+} PrefBoolean;
+PrefBoolean pref_booleans[] = {
+    { "Transparent background", &pref_transparent },
+    { "Show Thermometer", &pref_thermometer },
+};
+
 GdkColor fg_color, bg_color, iow_color;
 GdkColor temp_min_color, temp_max_color, temp_gradient[100];
 GdkColor freq_min_color, freq_max_color, freq_gradient[100];
@@ -31,15 +42,6 @@ PrefColor pref_colors[] = {
     { "Max temperature", "red", &temp_max_color },
 };
 
-gboolean pref_transparent = TRUE;
-typedef struct {
-    const gchar* description;
-    gboolean* value;
-} PrefBoolean;
-PrefBoolean pref_booleans[] = {
-    { "Transparent background", &pref_transparent },
-};
-
 gint refresh_rate = 1000;
 gint pref_temp_alarm = 85;
 typedef struct {
@@ -47,11 +49,14 @@ typedef struct {
     gint* value;
     gint min;
     gint max;
+    const gboolean* enabler;
+    GtkWidget* widget;
 } PrefRangeval;
 PrefRangeval pref_rangevals[] = {
     { "Refresh rate (ms)", &refresh_rate, 100, 100000 },
-    { "High temperature alarm", &pref_temp_alarm, 30, 100 },
+    { "High temperature alarm", &pref_temp_alarm, 30, 100, &pref_thermometer },
 };
+
 
 char* pref_custom_command;
 // char* pref_temp_file;
@@ -74,6 +79,9 @@ void preferences_changed() {
         temp_gradient[i].green = (temp_min_color.green*(99-i)+temp_max_color.green*i)/99;
         temp_gradient[i].blue = (temp_min_color.blue*(99-i)+temp_max_color.blue*i)/99;
     }
+    for (PrefRangeval* rv=pref_rangevals; rv < pref_rangevals+G_N_ELEMENTS(pref_rangevals); rv++)
+        if (rv->enabler && rv->widget)
+            gtk_widget_set_sensitive (rv->widget, *rv->enabler);
 }
 
 void on_option_toggled(GtkToggleButton *togglebutton, PrefBoolean *b) {
@@ -202,6 +210,7 @@ void show_pref_dialog()
         gtk_box_pack_start(GTK_BOX(hb), cbutton, FALSE, FALSE, 0);
     }
     
+    GHashTable *enablers = g_hash_table_new (NULL,NULL);
     frame = gtk_frame_new("Options");
     gtk_box_pack_start(GTK_BOX(hb), frame, TRUE, TRUE, 0);
     vb = gtk_vbox_new(FALSE,0);
@@ -212,13 +221,16 @@ void show_pref_dialog()
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(cbutton), *b->value);
         g_signal_connect(G_OBJECT(cbutton), "toggled", G_CALLBACK(on_option_toggled), b);
         gtk_box_pack_start(GTK_BOX(vb), cbutton, FALSE, FALSE, 0);
+        g_hash_table_insert(enablers, b->value, cbutton);
     }
 
     for(PrefRangeval* rv=pref_rangevals; rv < pref_rangevals+G_N_ELEMENTS(pref_rangevals); rv++)
     {
         GtkWidget* innerBox = gtk_hbox_new(FALSE,0);
-        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new(rv->description), TRUE, TRUE, 0);
+        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new(rv->description), FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(innerBox), gtk_hseparator_new(), TRUE, TRUE, 3);
         GtkSpinButton* spin = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(rv->min, rv->max, 1));
+        rv->widget = GTK_WIDGET(spin);
         gtk_spin_button_set_digits(spin, 0);
         gtk_spin_button_set_value(spin, *rv->value);
         g_signal_connect(G_OBJECT(spin), "value-changed", G_CALLBACK(on_rangeval_changed), rv);
@@ -239,5 +251,6 @@ void show_pref_dialog()
         gtk_box_pack_start(GTK_BOX(vb), innerBox, FALSE, FALSE, 0);
     }
 
+    preferences_changed(); // Effect enablers
     gtk_widget_show_all(GTK_WIDGET(pref_dialog));
 }
