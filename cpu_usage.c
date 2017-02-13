@@ -21,12 +21,7 @@
 #endif
 
 typedef unsigned long long u64;
-
-typedef struct {
-    int usage;
-    int iowait;
-} CPU_Usage;
-
+typedef struct { int usage, iowait;  } CPU_Usage;
 CPU_Usage
 cpu_usage(int scale)
 {
@@ -85,6 +80,7 @@ file_read_int(const char* file, int on_error)
     return on_error;
 }
 
+// All freqs in MHz
 int scaling_min_freq = 0;
 int scaling_cur_freq = 0;
 int scaling_max_freq = 0;
@@ -93,7 +89,7 @@ int
 cpu_freq(void)
 {
     if (scaling_cur_freq < 0)
-        return 1; // Do not insist
+        return 0; // Do not insist
 
     static FILE *cur_freq_file = NULL;
     if (!cur_freq_file) {
@@ -104,15 +100,17 @@ cpu_freq(void)
         fflush(cur_freq_file);
         if (fscanf(cur_freq_file, "%u", &scaling_cur_freq) == 1) {
             if (scaling_max_freq) {
+                scaling_cur_freq /= 1000; // KHz -> MHz
                 if (scaling_cur_freq < scaling_min_freq)
                     scaling_min_freq = scaling_cur_freq;
                 if (scaling_cur_freq > scaling_max_freq)
                     scaling_max_freq = scaling_cur_freq;
             } else {
                 scaling_min_freq =
-                    file_read_int("/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq", scaling_cur_freq);
+                    file_read_int("/sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq", scaling_cur_freq) / 1000;
                 scaling_max_freq =
-                    file_read_int("/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq", scaling_cur_freq);
+                    file_read_int("/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq", scaling_cur_freq) / 1000;
+                scaling_cur_freq /= 1000; // KHz -> MHz
             }
             return scaling_cur_freq;
         }
@@ -120,7 +118,7 @@ cpu_freq(void)
         cur_freq_file = NULL;
     }
     scaling_cur_freq = -1; // Do not waste efforts retrying
-    return 1;
+    return 0;
 }
 
 int

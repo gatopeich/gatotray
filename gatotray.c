@@ -37,7 +37,7 @@
 #include "settings.c"
 #include "gatotray.xpm"
 
-#define SCALE (1<<20)
+#define SCALE (1<<15)
 
 typedef struct {
     CPU_Usage cpu;
@@ -69,7 +69,7 @@ GdkPoint Termometer[] = {{2,15},{2,2},{3,1},{4,1},{5,2},{5,15},{6,16},{6,19},{5,
 #define Termometer_tube_end 16
 #define Termometer_scale 22
 GdkPoint termometer_tube[Termometer_tube_size];
-GdkPoint termometer[sizeof(Termometer)/sizeof(*Termometer)];
+GdkPoint termometer[G_N_ELEMENTS(Termometer)];
 GdkFont *font = NULL;
 
 void redraw(void)
@@ -80,7 +80,7 @@ void redraw(void)
     for(int i=0; i<width; i++)
     {
         CPUstatus* h = &history[width-1-i];
-        unsigned shade = h->freq * 99 / SCALE;
+        unsigned shade = MIN(MAX(0,h->freq),SCALE) * (G_N_ELEMENTS(freq_gradient)-1) / SCALE;
 
         /* Or shade by temperature:
         shade = h->temp > 0 ? (h->temp < 100 ? h->temp : 99) : 0;
@@ -108,7 +108,7 @@ void redraw(void)
         if(T<0) T=0;
         if(T>99) T=99;
         gdk_gc_set_rgb_fg_color(gc, &temp_gradient[T]);
-        gdk_draw_polygon(pixmap, gc, TRUE, termometer, sizeof(termometer)/sizeof(*termometer));
+        gdk_draw_polygon(pixmap, gc, TRUE, termometer, G_N_ELEMENTS(termometer));
         if( T<99 )
         {
             termometer_tube[0].y = (T*termometer[1].y+(99-T)*termometer[0].y)/99;
@@ -117,7 +117,7 @@ void redraw(void)
             gdk_draw_polygon(pixmap, gc, TRUE, termometer_tube, Termometer_tube_size);
         }
         gdk_gc_set_rgb_fg_color(gc, &fg_color);
-        gdk_draw_lines(pixmap, gc, termometer, sizeof(termometer)/sizeof(*termometer));
+        gdk_draw_lines(pixmap, gc, termometer, G_N_ELEMENTS(termometer));
     }
 
     GdkPixbuf *pixbuf = gdk_pixbuf_get_from_drawable(NULL, pixmap, NULL, 0, 0, 0, 0, width, width);
@@ -169,7 +169,7 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
     gc = gdk_gc_new(pixmap);
     gdk_gc_set_line_attributes(gc, 1, GDK_LINE_SOLID, GDK_CAP_NOT_LAST, GDK_JOIN_MITER);
 
-    for(int i=0; i<sizeof(termometer)/sizeof(*termometer); i++)
+    for(int i=0; i<G_N_ELEMENTS(termometer); i++)
     {
         termometer[i].x = Termometer[i].x*newsize/Termometer_scale;
         termometer[i].y = Termometer[i].y*newsize/Termometer_scale;
@@ -191,8 +191,6 @@ timeout_cb (gpointer data)
     timer++;
     for(int i = hist_size-1; i > 0; i--)
     {
-        const int ONE = 1<<10; // 10-bits fixed-point
-        int x = ONE * i / hist_size;
         // Persistence 'P' is higher for farther history points, so that they take
         // longer to blend with newer data. Ideally we have:
         // - High P (~1.0) at the end of the history
@@ -202,29 +200,32 @@ timeout_cb (gpointer data)
         // Since (1/x) is the log derivative, I call this a "pseudo-logarithmic time scale"
         // Examples:
         // - Linear: P = x;
-        // - Cuadratic: P = x(2-x) == x*(2*ONE-x)/ONE
+        // - Cuadratic: P = x(2-x) == x*(2*_1-x)/_1
         // ... a-(b/(x+c)): a = b/c ; a = 1 + (b/(1+c))
         // b/c = 1+ b/(1+c) :: b = c + b/(1+1/c) :: b/c = c+1 :: { b = c(c+1), a = c+1 }
         // a = c+1, b = a*c
         // c = 1/4 --> a = 5/4, b = 5/16 ===> 5/4 - (5/(16x+4))
+        // - P = (c+1) - (c(c+1)/(x+c)) := ((x+c)(c+1)-c(c+1)) / (x+c) := (c+1)x/(x+c)
+        // - Log-dev: P = (c+1)x/(c+x)
         // Taking C as a (negative) power of 2 makes all this math fast & accurate with fixed-point
-        const int C = ONE/4, A = C+ONE, B = A*C/ONE;
-        int Persistence = A - (B*ONE/(x+C));
-        #define blend(dst, src) do{ \
-            dst = (Persistence*dst + (ONE-Persistence)*src) / ONE; \
-        }while(0)
+        const int _1 = 1<<15; // For Q15 fixed-point operation
+        int x = _1 * i / hist_size, C = _1/4, P = (_1+C)*x/(C+x);
+        #define blend(dst, src) { dst = (P*dst + (_1-P)*src) / _1; }
+        
+        // Simplest blending:
+        // #define blend(dst, src) { dst = (dst + src + 1)/2; }
 
         blend(history[i].cpu.usage, history[i-1].cpu.usage);
         blend(history[i].cpu.iowait, history[i-1].cpu.iowait);
         blend(history[i].freq, history[i-1].freq);
         blend(history[i].temp, history[i-1].temp);
-
         #undef blend
     }
     history[0].cpu = cpu_usage(SCALE);
-    int freq = cpu_freq();
-    history[0].freq = (freq - scaling_min_freq) * SCALE /
-                        (scaling_max_freq-scaling_min_freq);
+    int freq = cpu_freq(); // Frequency in MHz
+    history[0].freq = scaling_max_freq > scaling_min_freq ?
+        (freq - scaling_min_freq) * SCALE / (scaling_max_freq-scaling_min_freq) : 0;
+    printf("freq = %d, min~max = %d~%d, normalized = %d\n", freq, scaling_min_freq, scaling_max_freq, history[0].freq);
     history[0].temp = cpu_temperature();
 
     const MemInfo mi = mem_info();
@@ -263,7 +264,7 @@ void
 install_screensaver()
 {
     gchar* cmd = g_strdup_printf(
-        "sh -c \"(echo programs: %s -root;echo mode: one;echo selected: 0) >> %s/.xscreensaver"
+        "sh -c \"(echo programs: %s -root;echo mode: _1;echo selected: 0) >> %s/.xscreensaver"
         " && xscreensaver-command -demo\"", abs_argv0, g_get_home_dir());
     g_message("%s",cmd);
     g_spawn_command_line_async(cmd, NULL);
