@@ -1,11 +1,12 @@
-#define GATOTRAY_VERSION "gatotray v3.0"
+#define GATOTRAY_VERSION "gatotray v3.1"
 /*
  * (c) 2011 by gatopeich, licensed under a Creative Commons Attribution 3.0
  * Unported License: http://creativecommons.org/licenses/by/3.0/
  * Briefly: Use it however suits you better and just give me due credit.
  *
  * Changelog:
- * v3.0 Render with Cairo and adding a screensaver mode 
+ * v3.1 Fix bugs in freq handling after change in SCALE
+ * v3.0 Screensaver mode, higher SCALE factor for better history accuracy
  * v2.2 Added config for top command and location of temperature & frequency
  * v2.0 Added pref file and dialog.
  * v1.11 Experimenting with configurability.
@@ -70,7 +71,6 @@ GdkPoint Termometer[] = {{2,15},{2,2},{3,1},{4,1},{5,2},{5,15},{6,16},{6,19},{5,
 #define Termometer_scale 22
 GdkPoint termometer_tube[Termometer_tube_size];
 GdkPoint termometer[G_N_ELEMENTS(Termometer)];
-GdkFont *font = NULL;
 
 void redraw(void)
 {
@@ -178,8 +178,6 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
             termometer_tube[i].y = termometer[i].y;
         }
     }
-    if (!font)
-        font = gdk_font_load("-*-fixed-medium-r-*-*-12-*-*-*-*-*-*-*");
 
     redraw();
     return TRUE;
@@ -211,6 +209,10 @@ timeout_cb (gpointer data)
         const int _1 = 1<<15; // For Q15 fixed-point operation
         int x = _1 * i / hist_size, C = _1/4, P = (_1+C)*x/(C+x);
         #define blend(dst, src) { dst = (P*dst + (_1-P)*src) / _1; }
+
+        // Linear
+        //const int _1 = hist_size, P = i;
+        //#define blend(dst, src) { dst = (P*dst + (_1-P)*src + (_1/2)) / _1; }
         
         // Simplest blending:
         // #define blend(dst, src) { dst = (dst + src + 1)/2; }
@@ -225,7 +227,8 @@ timeout_cb (gpointer data)
     int freq = cpu_freq(); // Frequency in MHz
     history[0].freq = scaling_max_freq > scaling_min_freq ?
         (freq - scaling_min_freq) * SCALE / (scaling_max_freq-scaling_min_freq) : 0;
-    printf("freq = %d, min~max = %d~%d, normalized = %d\n", freq, scaling_min_freq, scaling_max_freq, history[0].freq);
+    // printf("freq = %d, min~max = %d~%d, normalized = %d%%\n", freq, scaling_min_freq, scaling_max_freq, history[0].freq*100/SCALE);
+
     history[0].temp = cpu_temperature();
 
     const MemInfo mi = mem_info();
@@ -233,7 +236,7 @@ timeout_cb (gpointer data)
     if (!info_text)
         info_text = g_string_new(NULL);
     g_string_printf(info_text, "CPU %d%% busy @ %d MHz, %d%% I/O wait"
-            , history[0].cpu.usage*100/SCALE, freq/1000, history[0].cpu.iowait*100/SCALE);
+            , history[0].cpu.usage*100/SCALE, freq, history[0].cpu.iowait*100/SCALE);
     if (history[0].temp)
         g_string_append_printf (info_text, "\nTemperature: %d°C", history[0].temp);
     if (mi.Total)
