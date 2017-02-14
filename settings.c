@@ -1,6 +1,6 @@
 /* Glib preferences & matched GTK+ dialog.
- * 
- * (c) 2011 by gatopeich, licensed under a Creative Commons Attribution 3.0
+ *
+ * (c) 2011~2017 by gatopeich, licensed under a Creative Commons Attribution 3.0
  * Unported License: http://creativecommons.org/licenses/by/3.0/
  * Briefly: Use it however suits you better and just give me due credit.
  *
@@ -25,8 +25,10 @@ PrefBoolean pref_booleans[] = {
 };
 
 GdkColor fg_color, bg_color, iow_color;
-GdkColor temp_min_color, temp_max_color, temp_gradient[100];
-GdkColor freq_min_color, freq_max_color, freq_gradient[100];
+#define SHADES 100
+#define MAX_SHADE (SHADES-1)
+GdkColor temp_min_color, temp_max_color, temp_gradient[SHADES];
+GdkColor freq_min_color, freq_max_color, freq_gradient[SHADES];
 typedef struct {
     const gchar* description;
     const gchar* preset;
@@ -71,13 +73,13 @@ PrefString pref_strings[] = {
 };
 
 void preferences_changed() {
-    for(int i=0;i<100;i++) {
-        freq_gradient[i].red = (freq_min_color.red*(99-i)+freq_max_color.red*i)/99;
-        freq_gradient[i].green = (freq_min_color.green*(99-i)+freq_max_color.green*i)/99;
-        freq_gradient[i].blue = (freq_min_color.blue*(99-i)+freq_max_color.blue*i)/99;
-        temp_gradient[i].red = (temp_min_color.red*(99-i)+temp_max_color.red*i)/99;
-        temp_gradient[i].green = (temp_min_color.green*(99-i)+temp_max_color.green*i)/99;
-        temp_gradient[i].blue = (temp_min_color.blue*(99-i)+temp_max_color.blue*i)/99;
+    for(int i=0;i<SHADES;i++) {
+        freq_gradient[i].red = (freq_min_color.red*(MAX_SHADE-i)+freq_max_color.red*i)/MAX_SHADE;
+        freq_gradient[i].green = (freq_min_color.green*(MAX_SHADE-i)+freq_max_color.green*i)/MAX_SHADE;
+        freq_gradient[i].blue = (freq_min_color.blue*(MAX_SHADE-i)+freq_max_color.blue*i)/MAX_SHADE;
+        temp_gradient[i].red = (temp_min_color.red*(MAX_SHADE-i)+temp_max_color.red*i)/MAX_SHADE;
+        temp_gradient[i].green = (temp_min_color.green*(MAX_SHADE-i)+temp_max_color.green*i)/MAX_SHADE;
+        temp_gradient[i].blue = (temp_min_color.blue*(MAX_SHADE-i)+temp_max_color.blue*i)/MAX_SHADE;
     }
     for (PrefRangeval* rv=pref_rangevals; rv < pref_rangevals+G_N_ELEMENTS(pref_rangevals); rv++)
         if (rv->enabler && rv->widget)
@@ -192,7 +194,7 @@ void show_pref_dialog()
     GtkWidget* vb = gtk_dialog_get_content_area(GTK_DIALOG(pref_dialog));
     GtkWidget* hb = gtk_hbox_new(FALSE, 0);
     gtk_container_add(GTK_CONTAINER(vb), hb);
-    
+
     GtkWidget *frame = gtk_frame_new("Colors");
     gtk_box_pack_start(GTK_BOX(hb), frame, FALSE, FALSE, 0);
     vb = gtk_vbox_new(FALSE,0);
@@ -209,7 +211,7 @@ void show_pref_dialog()
                       G_CALLBACK(preferences_changed), c);
         gtk_box_pack_start(GTK_BOX(hb), cbutton, FALSE, FALSE, 0);
     }
-    
+
     GHashTable *enablers = g_hash_table_new (NULL,NULL);
     frame = gtk_frame_new("Options");
     gtk_box_pack_start(GTK_BOX(hb), frame, TRUE, TRUE, 0);
