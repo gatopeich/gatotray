@@ -5,12 +5,13 @@
 #  Briefly: Use it however suits you better and just give me due credit.
 #
 ### Changelog:
+# V3.2: Smooth Screensaver render with Cairo
 # V3.1: Bugfixes. Versioning
 # V3.0: Screensaver support.
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 3.1
+VERSION := 3.2
 CFLAGS := -std=c99 -Wall -O3 -g3 -DVERSION=\"$(VERSION)\" $(CFLAGS)
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
 LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)

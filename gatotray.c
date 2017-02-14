@@ -77,81 +77,129 @@ GdkPoint termometer[G_N_ELEMENTS(Termometer)];
 
 void redraw(void)
 {
-    gdk_gc_set_rgb_fg_color(gc, &bg_color);
-    gdk_draw_rectangle(pixmap, gc, TRUE, 0, 0, width, width);
-
-    for(int i=0; i<width; i++)
-    {
-        CPUstatus* h = &history[width-1-i];
-        unsigned shade = MIN(MAX(0,h->freq),SCALE) * (G_N_ELEMENTS(freq_gradient)-1) / SCALE;
-
-        /* Or shade by temperature:
-        shade = h->temp > 0 ? (h->temp < 100 ? h->temp : 99) : 0;
-        gdk_gc_set_rgb_fg_color(gc, &temp_gradient[shade]);
-        */
-
-        /* Bottom blue strip for i/o waiting cycles: */
-        int iow_size = h->cpu.iowait*width/SCALE;
-        int bottom = width-iow_size;
-        if( iow_size ) {
-            gdk_gc_set_rgb_fg_color(gc, &iow_color);
-            gdk_draw_line(pixmap, gc, i, bottom, i, width);
-        }
-
-        gdk_gc_set_rgb_fg_color(gc, &freq_gradient[shade]);
-        gdk_draw_line(pixmap, gc, i, bottom-(h->cpu.usage*width/SCALE), i, bottom);
-    }
-
-    int T;
-    if (pref_thermometer && (T= history[0].temp)) /* if temp=0, it could not be read */
-    if ( T<pref_temp_alarm || (timer&1) ) /* Blink when hot! */
-    {
-        /* scale temp from 5~105 degrees Celsius to 0~100*/
-        T = (T-5)*100/100;
-        if(T<0) T=0;
-        if(T>99) T=99;
-        gdk_gc_set_rgb_fg_color(gc, &temp_gradient[T]);
-        gdk_draw_polygon(pixmap, gc, TRUE, termometer, G_N_ELEMENTS(termometer));
-        if( T<99 )
-        {
-            termometer_tube[0].y = (T*termometer[1].y+(99-T)*termometer[0].y)/99;
-            termometer_tube[Termometer_tube_points-1].y = termometer_tube[0].y;
-            gdk_gc_set_rgb_fg_color(gc, &bg_color);
-            gdk_draw_polygon(pixmap, gc, TRUE, termometer_tube, Termometer_tube_points);
-        }
-        gdk_gc_set_rgb_fg_color(gc, &fg_color);
-        gdk_draw_lines(pixmap, gc, termometer, G_N_ELEMENTS(termometer));
-    }
-
-    GdkPixbuf *pixbuf = gdk_pixbuf_get_from_drawable(NULL, pixmap, NULL, 0, 0, 0, 0, width, width);
     if (screensaver)
     {
         int w = gdk_window_get_width(screensaver), h = gdk_window_get_height(screensaver);
-        int size = MIN(w,h), x = (w-size)/2, y = (h-size)/2;
+        cairo_t *cr = gdk_cairo_create(screensaver);
+        gdk_cairo_set_source_color(cr, &bg_color);
+        cairo_rectangle(cr, 0, 0, w, h);
+        cairo_fill(cr);
 
-        GdkPixbuf* scaled = gdk_pixbuf_scale_simple (pixbuf, size, size, GDK_INTERP_TILES);
-        PangoContext *pango = gdk_pango_context_get_for_screen (gdk_window_get_screen(screensaver));
+        const float _1 = 1.0/65535;
+        cairo_move_to(cr, 0, h);
+        cairo_pattern_t *pattern = cairo_pattern_create_linear(0,h,w,h);
+        float d_w = (w-1)*1.0/(width-1), d_h = (h-1)*1.0/SCALE, d_o = 1.0/width;
+        GdkColor* shade = {0};
+        for(int i=0; i<width; i++) {
+            CPUstatus* st = &history[width-1-i];
+            cairo_line_to(cr, i*d_w, h-(d_h * st->cpu.usage));
+            shade = &freq_gradient[MIN(MAX(0, st->freq*MAX_SHADE/SCALE), MAX_SHADE)];
+            cairo_pattern_add_color_stop_rgba(pattern, i*d_o, _1*shade->red, _1*shade->green, _1*shade->blue, 0.7);
+        }
+        cairo_rel_line_to(cr, d_w, 0);
+        cairo_line_to(cr, w, h);
+        cairo_close_path(cr);
+        cairo_set_source_rgb(cr, _1*shade->red, _1*shade->green, _1*shade->blue);
+        cairo_stroke_preserve(cr);
+        cairo_set_source(cr, pattern);
+        cairo_fill(cr);
+
+        cairo_move_to(cr, 0, h);
+        for(int i=0; i<width; i++)
+            cairo_line_to(cr, i*d_w, h-(d_h * history[width-1-i].cpu.iowait));
+        cairo_rel_line_to(cr, d_w, 0);
+        cairo_set_source_rgb(cr, _1*iow_color.red, _1*iow_color.green, _1*iow_color.blue);
+        cairo_stroke_preserve(cr);
+        cairo_line_to(cr, w, h);
+        cairo_close_path(cr);
+        cairo_set_source_rgba(cr, _1*iow_color.red, _1*iow_color.green, _1*iow_color.blue, 0.5);
+        cairo_fill(cr);
+
+        PangoContext *pango = pango_cairo_create_context(cr);
         PangoLayout *pl = pango_layout_new (pango);
-        pango_layout_set_width (pl, size * PANGO_SCALE);
+        pango_layout_set_width (pl, w * PANGO_SCALE);
         pango_layout_set_alignment (pl, PANGO_ALIGN_CENTER);
         pango_layout_set_text (pl, info_text ? info_text->str : GATOTRAY_VERSION, -1);
-
-        gdk_draw_pixbuf (screensaver, NULL, scaled, 0,0, x,y, -1,-1, GDK_RGB_DITHER_NONE,0,0);
-        gdk_draw_layout (screensaver, gc, x,y, pl);
-
-        g_object_unref(scaled);
+        gdk_cairo_set_source_color(cr, &fg_color);
+        pango_cairo_show_layout(cr, pl);
         g_object_unref(pl);
         g_object_unref(pango);
-    } else {
-        if (pref_transparent) { // TODO: Draw directly with alpha!
-            GdkPixbuf* new = gdk_pixbuf_add_alpha(pixbuf, TRUE
-                , bg_color.red>>8, bg_color.green>>8, bg_color.blue>>8);
-            g_object_unref(pixbuf);
-            pixbuf = new;
-        }
-        gtk_status_icon_set_from_pixbuf(GTK_STATUS_ICON(app_icon), pixbuf);
+
+        cairo_destroy(cr); // Draw!
     }
-    g_object_unref(pixbuf);
+    else
+    {
+        gdk_gc_set_rgb_fg_color(gc, &bg_color);
+        gdk_draw_rectangle(pixmap, gc, TRUE, 0, 0, width, width);
+
+        for(int i=0; i<width; i++)
+        {
+            CPUstatus* h = &history[width-1-i];
+            GdkColor* shade = &freq_gradient[MIN(MAX(0, h->freq*MAX_SHADE/SCALE), MAX_SHADE)];
+
+            /* Or shade by temperature:
+            GdkColor* shade = &temp_gradient[MIN(MAX(0, h->temp*MAX_SHADE/SCALE, SCALE)];
+            */
+
+            /* Bottom blue strip for i/o waiting cycles: */
+            int iow_size = h->cpu.iowait*width/SCALE;
+            int bottom = width-iow_size;
+            if( iow_size ) {
+                gdk_gc_set_rgb_fg_color(gc, &iow_color);
+                gdk_draw_line(pixmap, gc, i, bottom, i, width);
+            }
+
+            gdk_gc_set_rgb_fg_color(gc, shade);
+            gdk_draw_line(pixmap, gc, i, bottom-(h->cpu.usage*width/SCALE), i, bottom);
+        }
+
+        int T;
+        if (pref_thermometer && (T=history[0].temp)) /* if temp=0, it could not be read */
+        if ( T<pref_temp_alarm || (timer&1) ) /* Blink when hot! */
+        {
+            /* scale temp from 5~105 degrees Celsius to 0~GRADIENT_SIZE*/
+            T = MIN(MAX(0, (T-5)*MAX_SHADE/100), MAX_SHADE);
+            gdk_gc_set_rgb_fg_color(gc, &temp_gradient[T]);
+            gdk_draw_polygon(pixmap, gc, TRUE, termometer, G_N_ELEMENTS(termometer));
+            if( T<MAX_SHADE )
+            {
+                termometer_tube[0].y = (T*termometer[1].y+(MAX_SHADE-T)*termometer[0].y)/MAX_SHADE;
+                termometer_tube[Termometer_tube_points-1].y = termometer_tube[0].y;
+                gdk_gc_set_rgb_fg_color(gc, &bg_color);
+                gdk_draw_polygon(pixmap, gc, TRUE, termometer_tube, Termometer_tube_points);
+            }
+            gdk_gc_set_rgb_fg_color(gc, &fg_color);
+            gdk_draw_lines(pixmap, gc, termometer, G_N_ELEMENTS(termometer));
+        }
+
+        GdkPixbuf *pixbuf = gdk_pixbuf_get_from_drawable(NULL, pixmap, NULL, 0, 0, 0, 0, width, width);
+        if (screensaver)
+        {
+            int w = gdk_window_get_width(screensaver), h = gdk_window_get_height(screensaver);
+            int size = MIN(w,h), x = (w-size)/2, y = (h-size)/2;
+            GdkPixbuf* scaled = gdk_pixbuf_scale_simple (pixbuf, size, size, GDK_INTERP_TILES);
+            PangoContext *pango = gdk_pango_context_get_for_screen (gdk_window_get_screen(screensaver));
+            PangoLayout *pl = pango_layout_new (pango);
+            pango_layout_set_width (pl, size * PANGO_SCALE);
+            pango_layout_set_alignment (pl, PANGO_ALIGN_CENTER);
+            pango_layout_set_text (pl, info_text ? info_text->str : GATOTRAY_VERSION, -1);
+            gdk_gc_set_rgb_fg_color(gc, &fg_color);
+            gdk_draw_pixbuf (screensaver, NULL, scaled, 0,0, x,y, -1,-1, GDK_RGB_DITHER_NONE,0,0);
+            gdk_draw_layout (screensaver, gc, x,y, pl);
+            g_object_unref(scaled);
+            g_object_unref(pl);
+            g_object_unref(pango);
+        } else {
+            if (pref_transparent) { // TODO: Draw directly with alpha!
+                GdkPixbuf* new = gdk_pixbuf_add_alpha(pixbuf, TRUE
+                    , bg_color.red>>8, bg_color.green>>8, bg_color.blue>>8);
+                g_object_unref(pixbuf);
+                pixbuf = new;
+            }
+            gtk_status_icon_set_from_pixbuf(GTK_STATUS_ICON(app_icon), pixbuf);
+        }
+        g_object_unref(pixbuf);
+    }
 }
 
 gboolean
@@ -216,7 +264,7 @@ timeout_cb (gpointer data)
         // Linear
         //const int _1 = hist_size, P = i;
         //#define blend(dst, src) { dst = (P*dst + (_1-P)*src + (_1/2)) / _1; }
-        
+
         // Simplest blending:
         // #define blend(dst, src) { dst = (dst + src + 1)/2; }
 
@@ -230,7 +278,7 @@ timeout_cb (gpointer data)
     int freq = cpu_freq(); // Frequency in MHz
     history[0].freq = scaling_max_freq > scaling_min_freq ?
         (freq - scaling_min_freq) * SCALE / (scaling_max_freq-scaling_min_freq) : 0;
-    // printf("freq = %d, min~max = %d~%d, normalized = %d%%\n", freq, scaling_min_freq, scaling_max_freq, history[0].freq*100/SCALE);
+    // printf("freq = %d, min~max = %d~%d, normalized = %d%%\n", freq, scaling_min_freq, scaling_max_freq, history[0].freq*GRADIENT_SIZE/SCALE);
 
     history[0].temp = cpu_temperature();
 
@@ -238,13 +286,13 @@ timeout_cb (gpointer data)
 
     if (!info_text)
         info_text = g_string_new(NULL);
-    g_string_printf(info_text, "CPU %d%% busy @ %d MHz, %d%% I/O wait"
+    g_string_printf(info_text, GATOTRAY_VERSION "\nCPU %d%% busy, %d%% on I/O-wait @ %d MHz"
             , history[0].cpu.usage*100/SCALE, freq, history[0].cpu.iowait*100/SCALE);
+    if (mi.Total)
+        g_string_append_printf (info_text, "\nFree RAM: %d%% of %d MB"
+            , ((mi.Available?mi.Available:mi.Free)*100/mi.Total), mi.Total>>10);
     if (history[0].temp)
         g_string_append_printf (info_text, "\nTemperature: %d°C", history[0].temp);
-    if (mi.Total)
-        g_string_append_printf (info_text, "\nUsed RAM: %d%% of %d MB"
-            , 100-((mi.Available?mi.Available:mi.Free)*100/mi.Total), mi.Total>>10);
 
     // Tooltip should not be refreshed too often, otherwise it never shows
     static gint64 last_tooltip_update = 0;
