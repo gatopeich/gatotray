@@ -287,7 +287,7 @@ timeout_cb (gpointer data)
     if (!info_text)
         info_text = g_string_new(NULL);
     g_string_printf(info_text, GATOTRAY_VERSION "\nCPU %d%% busy, %d%% on I/O-wait @ %d MHz"
-            , history[0].cpu.usage*100/SCALE, freq, history[0].cpu.iowait*100/SCALE);
+        , history[0].cpu.usage*100/SCALE, history[0].cpu.iowait*100/SCALE, freq);
     if (mi.Total)
         g_string_append_printf (info_text, "\nFree RAM: %d%% of %d MB"
             , ((mi.Available?mi.Available:mi.Free)*100/mi.Total), mi.Total>>10);
