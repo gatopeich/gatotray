@@ -80,10 +80,16 @@ void redraw(void)
     if (screensaver)
     {
         int w = gdk_window_get_width(screensaver), h = gdk_window_get_height(screensaver);
-        cairo_t *cr = gdk_cairo_create(screensaver);
-        gdk_cairo_set_source_color(cr, &bg_color);
-        cairo_rectangle(cr, 0, 0, w, h);
-        cairo_fill(cr);
+        
+        cairo_t *screen = gdk_cairo_create(screensaver);
+        cairo_surface_t *double_buffer = cairo_surface_create_similar_image(
+            cairo_get_target(screen), CAIRO_FORMAT_RGB24, w, h);
+        cairo_t *cr = cairo_create (double_buffer);
+
+        if (bg_color.red || bg_color.green || bg_color.blue) {
+            gdk_cairo_set_source_color(cr, &bg_color);
+            cairo_paint(cr);
+        }
 
         const float _1 = 1.0/65535;
         cairo_move_to(cr, 0, h);
@@ -125,7 +131,11 @@ void redraw(void)
         g_object_unref(pl);
         g_object_unref(pango);
 
-        cairo_destroy(cr); // Draw!
+        cairo_destroy(cr); // Draw now!
+        cairo_set_source_surface(screen, double_buffer, 0, 0);
+        cairo_paint(screen);
+        cairo_destroy(screen);
+        cairo_surface_destroy(double_buffer);
     }
     else
     {
@@ -213,8 +223,10 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
     }
     width = newsize;
 
-    if (pixmap) g_object_unref(pixmap);
-    pixmap = gdk_pixmap_new(NULL, width, width, 24);
+    if (!screensaver) {
+        if (pixmap) g_object_unref(pixmap);
+        pixmap = gdk_pixmap_new(NULL, width, width, 24);        
+    }
 
     if (gc)  g_object_unref(gc);
     gc = gdk_gc_new(pixmap);
