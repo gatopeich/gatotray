@@ -24,7 +24,7 @@ PrefBoolean pref_booleans[] = {
     { "Show Thermometer", &pref_thermometer },
 };
 
-GdkColor fg_color, bg_color, iow_color;
+GdkColor mem_color, fg_color, bg_color, iow_color;
 #define SHADES 100
 #define MAX_SHADE (SHADES-1)
 GdkColor temp_min_color, temp_max_color, temp_gradient[SHADES];
@@ -35,9 +35,10 @@ typedef struct {
     GdkColor* color;
 } PrefColor;
 PrefColor pref_colors[] = {
+    { "Free memory (top)", "Teal", &mem_color },
     { "Foreground", "black", &fg_color },
     { "Background", "white", &bg_color },
-    { "I/O wait", "blue", &iow_color },
+    { "I/O wait (bottom)", "blue", &iow_color },
     { "Min frequency", "green", &freq_min_color },
     { "Max frequency", "red", &freq_max_color },
     { "Min temperature", "blue", &temp_min_color },

@@ -1,5 +1,5 @@
 /* CPU usage and temperature functions.
- * 
+ *
  * (c) 2011 by gatopeich, licensed under a Creative Commons Attribution 3.0
  * Unported License: http://creativecommons.org/licenses/by/3.0/
  * Briefly: Use it however suits you better and just give me due credit.
@@ -93,7 +93,7 @@ cpu_freq(void)
 
     static FILE *cur_freq_file = NULL;
     if (!cur_freq_file) {
-        cur_freq_file = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq","r"); 
+        cur_freq_file = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq","r");
     }
     if (cur_freq_file) {
         rewind(cur_freq_file);
@@ -139,8 +139,8 @@ cpu_temperature(void)
          || (temperature_file = fopen("/proc/acpi/thermal_zone/THM/temperature", "r"))
          || (temperature_file = fopen("/proc/acpi/thermal_zone/THM0/temperature", "r"))
          || (temperature_file = fopen("/proc/acpi/thermal_zone/THRM/temperature", "r")))
-        { 
-            if (1 != fscanf(temperature_file, format, &T)) 
+        {
+            if (1 != fscanf(temperature_file, format, &T))
                 format = "%d"; // Fallback to simple int
         } else {
             unavailable = TRUE;
@@ -152,14 +152,15 @@ cpu_temperature(void)
     fflush(temperature_file);
     if (1==fscanf(temperature_file, format, &T)) {
         if (T>1000) T=(T+500)/1000;
-        return T;        
+        return T;
     }
-    
+
     unavailable = TRUE;
     return 0;
 }
 
-typedef struct { int Total, Free, Available; } MemInfo;
+// Memory info in megabytes
+typedef struct { int Total_MB, Free_MB, Available_MB; } MemInfo;
 MemInfo meminfo = {0};
 MemInfo
 mem_info(void)
@@ -170,12 +171,16 @@ mem_info(void)
 
     static FILE* proc_meminfo = NULL;
     if (proc_meminfo || (proc_meminfo = fopen("/proc/meminfo", "r")))
-    { 
-        if (2==fscanf(proc_meminfo, "MemTotal: %d kB\nMemFree: %d kB\n"
-            , &meminfo.Total, &meminfo.Free))
+    {
+        int total, free;
+        if (2==fscanf(proc_meminfo, "MemTotal: %d kB\nMemFree: %d kB\n", &total, &free))
         {
-            if (1!=fscanf(proc_meminfo, "MemAvailable: %d kB\n", &meminfo.Available))
-                meminfo.Available = meminfo.Free; // Fallback on older kernels
+            meminfo.Total_MB = total >> 10;
+            meminfo.Free_MB = free >> 10;
+            if (1==fscanf(proc_meminfo, "MemAvailable: %d kB\n", &free))
+                meminfo.Available_MB = free >> 10;
+            else
+                meminfo.Available_MB = meminfo.Free_MB; // Fallback on older kernels
             rewind(proc_meminfo);
             fflush(proc_meminfo);
             return meminfo;
