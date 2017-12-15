@@ -1,7 +1,8 @@
 #ifndef VERSION
-#define VERSION "3.0"
+#define VERSION "3.x"
 #endif
 #define GATOTRAY_VERSION "gatotray v" VERSION
+#define GATOTRAY_URL "bitbucket.org/gatopeich/gatotray"
 /*
  * (c) 2011 by gatopeich, licensed under a Creative Commons Attribution 3.0
  * Unported License: http://creativecommons.org/licenses/by/3.0/
@@ -37,16 +38,20 @@
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
 
+// TODO: Include headers instead of full modules
 #include "cpu_usage.c"
 #include "settings.c"
 #include "gatotray.xpm"
 
 #define SCALE (1<<15)
+#define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
+#define PERCENT(scaled) RESCALE(scaled,100)
 
 typedef struct {
     CPU_Usage cpu;
     int freq;
     int temp;
+    int free_memory;
 } CPUstatus;
 
 CPUstatus* history = NULL;
@@ -77,10 +82,11 @@ GdkPoint termometer[G_N_ELEMENTS(Termometer)];
 
 void redraw(void)
 {
+    const int height = width;
     if (screensaver)
     {
         int w = gdk_window_get_width(screensaver), h = gdk_window_get_height(screensaver);
-        
+
         cairo_t *screen = gdk_cairo_create(screensaver);
         cairo_surface_t *double_buffer = cairo_surface_create_similar_image(
             cairo_get_target(screen), CAIRO_FORMAT_RGB24, w, h);
@@ -92,32 +98,51 @@ void redraw(void)
         }
 
         const float _1 = 1.0/65535;
-        cairo_move_to(cr, 0, h);
-        cairo_pattern_t *pattern = cairo_pattern_create_linear(0,h,w,h);
-        float d_w = (w-1)*1.0/(width-1), d_h = (h-1)*1.0/SCALE, d_o = 1.0/width;
+        float d_w = w*1.0/width, d_h = h*1.0/SCALE;
+
+        // Draw free memory filled path (hanging from top)
+        float r = _1*mem_color.red, g = _1*mem_color.green, b = _1*mem_color.blue;
+        cairo_move_to(cr, 0, 0);
+        for(int x=0; x<width; x++)
+            cairo_line_to(cr, x*d_w, d_h * history[width-1-x].free_memory);
+        cairo_rel_line_to(cr, d_w-1, 0);
+        cairo_line_to(cr, w-1, 0);
+        cairo_close_path(cr);
+        cairo_set_source_rgb(cr, r,g,b);
+        cairo_stroke_preserve(cr);
+        cairo_pattern_t *pattern = cairo_pattern_create_linear(0,0,0,h);
+        cairo_pattern_add_color_stop_rgba(pattern, 0, r,g,b, 0.0);
+        cairo_pattern_add_color_stop_rgba(pattern, h, r,g,b, 0.7);
+        cairo_set_source(cr, pattern);
+        cairo_fill(cr);
+
+        // Draw CPU usage filled path, pattern-colored by frequency
+        cairo_move_to(cr, 0, h-1);
+        pattern = cairo_pattern_create_linear(0,0,w,0);
         GdkColor* shade = {0};
-        for(int i=0; i<width; i++) {
-            CPUstatus* st = &history[width-1-i];
-            cairo_line_to(cr, i*d_w, h-(d_h * st->cpu.usage));
+        for(int x=0; x<width; x++) {
+            CPUstatus* st = &history[width-1-x];
+            cairo_line_to(cr, x*d_w, h - (d_h * st->cpu.usage));
             shade = &freq_gradient[MIN(MAX(0, st->freq*MAX_SHADE/SCALE), MAX_SHADE)];
-            cairo_pattern_add_color_stop_rgba(pattern, i*d_o, _1*shade->red, _1*shade->green, _1*shade->blue, 0.7);
+            cairo_pattern_add_color_stop_rgba(pattern, (x+.5)/width, _1*shade->red, _1*shade->green, _1*shade->blue, 0.7);
         }
-        cairo_rel_line_to(cr, d_w, 0);
-        cairo_line_to(cr, w, h);
+        cairo_rel_line_to(cr, d_w-1, 0);
+        cairo_line_to(cr, w-1, h-1);
         cairo_close_path(cr);
         cairo_set_source_rgb(cr, _1*shade->red, _1*shade->green, _1*shade->blue);
         cairo_stroke_preserve(cr);
         cairo_set_source(cr, pattern);
         cairo_fill(cr);
 
-        cairo_move_to(cr, 0, h);
-        for(int i=0; i<width; i++)
-            cairo_line_to(cr, i*d_w, h-(d_h * history[width-1-i].cpu.iowait));
-        cairo_rel_line_to(cr, d_w, 0);
+        // Draw I/O wait on top of usage
+        cairo_move_to(cr, 0, h-1);
+        for(int x=0; x<width; x++)
+            cairo_line_to(cr, x*d_w, h-(d_h * history[width-1-x].cpu.iowait));
+        cairo_rel_line_to(cr, d_w-1, 0); // Move to last pixel on the right side
+        cairo_line_to(cr, w-1, h-1);
+        cairo_close_path(cr);
         cairo_set_source_rgb(cr, _1*iow_color.red, _1*iow_color.green, _1*iow_color.blue);
         cairo_stroke_preserve(cr);
-        cairo_line_to(cr, w, h);
-        cairo_close_path(cr);
         cairo_set_source_rgba(cr, _1*iow_color.red, _1*iow_color.green, _1*iow_color.blue, 0.5);
         cairo_fill(cr);
 
@@ -131,7 +156,7 @@ void redraw(void)
         g_object_unref(pl);
         g_object_unref(pango);
 
-        cairo_destroy(cr); // Draw now!
+        cairo_destroy(cr); // Draw now, then destroy all associated resouces (e.g. patterns)
         cairo_set_source_surface(screen, double_buffer, 0, 0);
         cairo_paint(screen);
         cairo_destroy(screen);
@@ -140,27 +165,30 @@ void redraw(void)
     else
     {
         gdk_gc_set_rgb_fg_color(gc, &bg_color);
-        gdk_draw_rectangle(pixmap, gc, TRUE, 0, 0, width, width);
+        gdk_draw_rectangle(pixmap, gc, TRUE, 0, 0, width, height);
 
-        for(int i=0; i<width; i++)
+        for(int x=0; x<width; x++)
         {
-            CPUstatus* h = &history[width-1-i];
-            GdkColor* shade = &freq_gradient[MIN(MAX(0, h->freq*MAX_SHADE/SCALE), MAX_SHADE)];
+            CPUstatus* h = &history[width-1-x];
 
-            /* Or shade by temperature:
-            GdkColor* shade = &temp_gradient[MIN(MAX(0, h->temp*MAX_SHADE/SCALE, SCALE)];
-            */
+            if (x&1) {
+                gdk_gc_set_rgb_fg_color(gc, &mem_color);
+                gdk_draw_line(pixmap, gc, x, 0, x, RESCALE(h->free_memory,height));
+            }
+
+            GdkColor* shade = &freq_gradient[MIN(MAX(0, h->freq*MAX_SHADE/SCALE), MAX_SHADE)];
+            // Or shade by temperature: &temp_gradient[MIN(MAX(0, h->temp*MAX_SHADE/SCALE, SCALE)];
 
             /* Bottom blue strip for i/o waiting cycles: */
-            int iow_size = h->cpu.iowait*width/SCALE;
-            int bottom = width-iow_size;
+            int iow_size = RESCALE(h->cpu.iowait,height);
+            int bottom = height-iow_size;
             if( iow_size ) {
                 gdk_gc_set_rgb_fg_color(gc, &iow_color);
-                gdk_draw_line(pixmap, gc, i, bottom, i, width);
+                gdk_draw_line(pixmap, gc, x, bottom, x, height);
             }
 
             gdk_gc_set_rgb_fg_color(gc, shade);
-            gdk_draw_line(pixmap, gc, i, bottom-(h->cpu.usage*width/SCALE), i, bottom);
+            gdk_draw_line(pixmap, gc, x, bottom-RESCALE(h->cpu.usage,height), x, bottom);
         }
 
         int T;
@@ -182,32 +210,14 @@ void redraw(void)
             gdk_draw_lines(pixmap, gc, termometer, G_N_ELEMENTS(termometer));
         }
 
-        GdkPixbuf *pixbuf = gdk_pixbuf_get_from_drawable(NULL, pixmap, NULL, 0, 0, 0, 0, width, width);
-        if (screensaver)
-        {
-            int w = gdk_window_get_width(screensaver), h = gdk_window_get_height(screensaver);
-            int size = MIN(w,h), x = (w-size)/2, y = (h-size)/2;
-            GdkPixbuf* scaled = gdk_pixbuf_scale_simple (pixbuf, size, size, GDK_INTERP_TILES);
-            PangoContext *pango = gdk_pango_context_get_for_screen (gdk_window_get_screen(screensaver));
-            PangoLayout *pl = pango_layout_new (pango);
-            pango_layout_set_width (pl, size * PANGO_SCALE);
-            pango_layout_set_alignment (pl, PANGO_ALIGN_CENTER);
-            pango_layout_set_text (pl, info_text ? info_text->str : GATOTRAY_VERSION, -1);
-            gdk_gc_set_rgb_fg_color(gc, &fg_color);
-            gdk_draw_pixbuf (screensaver, NULL, scaled, 0,0, x,y, -1,-1, GDK_RGB_DITHER_NONE,0,0);
-            gdk_draw_layout (screensaver, gc, x,y, pl);
-            g_object_unref(scaled);
-            g_object_unref(pl);
-            g_object_unref(pango);
-        } else {
-            if (pref_transparent) { // TODO: Draw directly with alpha!
-                GdkPixbuf* new = gdk_pixbuf_add_alpha(pixbuf, TRUE
-                    , bg_color.red>>8, bg_color.green>>8, bg_color.blue>>8);
-                g_object_unref(pixbuf);
-                pixbuf = new;
-            }
-            gtk_status_icon_set_from_pixbuf(GTK_STATUS_ICON(app_icon), pixbuf);
+        GdkPixbuf *pixbuf = gdk_pixbuf_get_from_drawable(NULL, pixmap, NULL, 0, 0, 0, 0, width, height);
+        if (pref_transparent) { // TODO: Draw directly with alpha!
+            GdkPixbuf* new = gdk_pixbuf_add_alpha(pixbuf, TRUE
+                , bg_color.red>>8, bg_color.green>>8, bg_color.blue>>8);
+            g_object_unref(pixbuf);
+            pixbuf = new;
         }
+        gtk_status_icon_set_from_pixbuf(GTK_STATUS_ICON(app_icon), pixbuf);
         g_object_unref(pixbuf);
     }
 }
@@ -225,7 +235,7 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
 
     if (!screensaver) {
         if (pixmap) g_object_unref(pixmap);
-        pixmap = gdk_pixmap_new(NULL, width, width, 24);        
+        pixmap = gdk_pixmap_new(NULL, width, width, 24);
     }
 
     if (gc)  g_object_unref(gc);
@@ -246,6 +256,17 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
     return TRUE;
 }
 
+void feed_history() {
+    history[0].cpu = cpu_usage(SCALE);
+    int freq = cpu_freq(); // Frequency in MHz
+    history[0].freq = scaling_max_freq > scaling_min_freq ?
+        (freq - scaling_min_freq) * SCALE / (scaling_max_freq-scaling_min_freq) : 0;
+    history[0].temp = cpu_temperature();
+    MemInfo mi = mem_info();
+    if (mi.Total_MB)
+        history[0].free_memory = mi.Available_MB * SCALE / mi.Total_MB;
+}
+
 int
 timeout_cb (gpointer data)
 {
@@ -257,6 +278,7 @@ timeout_cb (gpointer data)
         // - High P (~1.0) at the end of the history
         // - Low P (~0) at the most recent point
         // - P grows fast on the first half, then slower on the second.
+        // See alternative curves in Wolfram|Alpha: http://goo.gl/sQMZWX
         // Best formula I found so far is: P = (c+1) - c(c+1)/(x+c)
         // Since (1/x) is the log derivative, I call this a "pseudo-logarithmic time scale"
         // Examples:
@@ -270,7 +292,7 @@ timeout_cb (gpointer data)
         // - Log-dev: P = (c+1)x/(c+x)
         // Taking C as a (negative) power of 2 makes all this math fast & accurate with fixed-point
         const int _1 = 1<<15; // For Q15 fixed-point operation
-        int x = _1 * i / hist_size, C = _1/4, P = (_1+C)*x/(C+x);
+        const int x = _1 * i / hist_size, C = _1/4, P = (_1+C)*x/(C+x);
         #define blend(dst, src) { dst = (P*dst + (_1-P)*src) / _1; }
 
         // Linear
@@ -284,25 +306,20 @@ timeout_cb (gpointer data)
         blend(history[i].cpu.iowait, history[i-1].cpu.iowait);
         blend(history[i].freq, history[i-1].freq);
         blend(history[i].temp, history[i-1].temp);
+        blend(history[i].free_memory, history[i-1].free_memory);
         #undef blend
     }
-    history[0].cpu = cpu_usage(SCALE);
-    int freq = cpu_freq(); // Frequency in MHz
-    history[0].freq = scaling_max_freq > scaling_min_freq ?
-        (freq - scaling_min_freq) * SCALE / (scaling_max_freq-scaling_min_freq) : 0;
-    // printf("freq = %d, min~max = %d~%d, normalized = %d%%\n", freq, scaling_min_freq, scaling_max_freq, history[0].freq*GRADIENT_SIZE/SCALE);
-
-    history[0].temp = cpu_temperature();
-
-    const MemInfo mi = mem_info();
+    feed_history();
 
     if (!info_text)
         info_text = g_string_new(NULL);
     g_string_printf(info_text, GATOTRAY_VERSION "\nCPU %d%% busy, %d%% on I/O-wait @ %d MHz"
-        , history[0].cpu.usage*100/SCALE, history[0].cpu.iowait*100/SCALE, freq);
-    if (mi.Total)
-        g_string_append_printf (info_text, "\nFree RAM: %d%% of %d MB"
-            , ((mi.Available?mi.Available:mi.Free)*100/mi.Total), mi.Total>>10);
+        , PERCENT(history[0].cpu.usage), PERCENT(history[0].cpu.iowait), scaling_cur_freq);
+
+    if (meminfo.Total_MB)
+        g_string_append_printf (info_text, "\nAvailable RAM: %d%% of %d MB"
+            , PERCENT(history[0].free_memory), meminfo.Total_MB);
+
     if (history[0].temp)
         g_string_append_printf (info_text, "\nTemperature: %d°C", history[0].temp);
 
@@ -323,7 +340,7 @@ timeout_cb (gpointer data)
 void
 open_website()
 {
-    g_spawn_command_line_async("xdg-open https://bitbucket.org/gatopeich/gatotray", NULL);
+    g_spawn_command_line_async("xdg-open https://"GATOTRAY_URL, NULL);
 }
 
 void
@@ -397,10 +414,8 @@ main( int argc, char *argv[] )
     pref_init();
 
     history = g_malloc(sizeof(*history));
-    history[0].cpu = cpu_usage(SCALE);
-    history[0].freq = 0;
-    history[0].temp = cpu_temperature();
     hist_size = width = 1;
+    feed_history();
 
     gchar** envp = g_get_environ();
     const gchar* wid = g_environ_getenv(envp,"XSCREENSAVER_WINDOW");
@@ -439,7 +454,7 @@ main( int argc, char *argv[] )
                               gtk_separator_menu_item_new());
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_ABOUT, NULL);
-        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Open " GATOTRAY_VERSION " website");
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), GATOTRAY_URL);
         g_signal_connect(G_OBJECT (menuitem), "activate", open_website, NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
 

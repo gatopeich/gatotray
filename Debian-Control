@@ -1,13 +1,13 @@
 Package: gatotray
-Version: 3.0
+Version: 3.3
 Section: Accessories
 Priority: optional
 Architecture: all
 Essential: no
 Depends: libgtk2.0-0
-Pre-Depends: 
+Pre-Depends:
 Recommends: xterm | procps | acpid
-Suggests: 
+Suggests:
 Installed-Size: 25
 Maintainer: gatopeich <gatoguan-os@yahoo.com>
 Conflicts:
@@ -16,3 +16,4 @@ Provides: gatotray
 Description: gatotray is a tiny CPU monitor displaying several stats
              graphically (usage, temperature, frequency) in small space,
              and tight on resources.
+             It also contains a screensaver mode with Cairo vector rendering.

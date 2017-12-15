@@ -5,14 +5,15 @@
 #  Briefly: Use it however suits you better and just give me due credit.
 #
 ### Changelog:
+# V3.3: Add free memory chart (from top)
 # V3.2: Smooth Screensaver render with Cairo
 # V3.1: Bugfixes. Versioning
 # V3.0: Screensaver support.
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 3.2
-CFLAGS := -std=c99 -Wall -O3 -g3 -DVERSION=\"$(VERSION)\" $(CFLAGS)
+VERSION := 3.3
+CFLAGS := -std=c99 -Wall -O2 -ggdb -DVERSION=\"$(VERSION)\" $(CFLAGS)
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
 LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
 
@@ -38,6 +39,7 @@ gatotray-$(VERSION).deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
 	install -vD gatotray.desktop root/usr/share/applications/gatotray.desktop
 	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
 	install -vD Debian-Control root/DEBIAN/control
+	sed -i 's/^Version:.*/Version: $(VERSION)/' Debian-Control root/DEBIAN/control
 	dpkg -b root $@
 
 # Additional: .api file for SciTE users...
@@ -55,7 +57,7 @@ clean:
 	rm -f $(objects) $(depends) $(targets)
 
 %.o: %.c %.d
-	$(CC) -c $(CPPFLAGS) $(CFLAGS) -o $@ $<	
+	$(CC) -c $(CPPFLAGS) $(CFLAGS) -o $@ $<
 
 %.i386: %.o.i386
 	$(LD) -m32 -o $@ $^
