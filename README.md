@@ -3,7 +3,7 @@
 (usage, temperature, frequency) in small space, and tight on resources.
 Since version 3.0, It can also run as a screensaver.
 
-![Gatotray as xscreensaver](https://bitbucket.org/repo/px9opx/images/3903802792-Screenshot_2017-02-14_13-02-01.png)
+![Gatotray as xscreensaver](Screenshot_2017-12-15_23-16-18.png)
 
 ## License ##
 
