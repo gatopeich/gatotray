@@ -14,10 +14,10 @@ Briefly: Use it however suits you better and just give me due credit.
 
 ## Features ##
 
-* Goals: usability, lightness, looks, compatibility.
+* Goals: low resource usage, high usability, graphic appeal, broad compatibility.
 
-* Designed to run continuously and give a good idea of the CPU's status in a
-  glimpse.
+* Designed to run continuously in small screen space to provide good idea of the ñ
+  CPU's status in a glimpse.
 
 * Can run as a `xscreensaver` plugin, so you can see your CPUs at work from a
   prudential distance.
