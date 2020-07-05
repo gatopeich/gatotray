@@ -1,10 +1,10 @@
 Package: gatotray
-Version: 3.3
+Version: 4.0
 Section: Accessories
 Priority: optional
 Architecture: all
 Essential: no
-Depends: libgtk2.0-0
+Depends: libgtk2.0-0,libprocps8
 Pre-Depends:
 Recommends: xterm | procps | acpid
 Suggests:

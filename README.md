@@ -12,11 +12,16 @@ Unported License: http://creativecommons.org/licenses/by/3.0/
 Briefly: Use it however suits you better and just give me due credit.
 
 
+## Dependencies
+Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-dev`
+
 ## Features ##
 
-* Goals: low resource usage, high usability, graphic appeal, broad compatibility.
+* Really lightweight, colourful, user friendly, broadly compatible.
 
-* Designed to run continuously in small screen space to provide good idea of the ñ
+* Tracks top consuming processes.
+
+* Designed to run continuously in small screen space to provide good idea of the
   CPU's status in a glimpse.
 
 * Can run as a `xscreensaver` plugin, so you can see your CPUs at work from a
@@ -25,24 +30,20 @@ Briefly: Use it however suits you better and just give me due credit.
 * Works in almost any Linux desktop, as long as it is Freedesktop compatible:
   XFCE, GNOME, GTK+, KDE, and more.
 
-* It uses an innovative logarithmic time scale, providing an intuitive idea of
-  CPU usage in reduced space. It looks good too. Colors vary with frequency and
-  temperature.
+* Logarithmic time scale tells a long story in very small space.
 
-* When available, temperature is represented in a thermometer, which blinks when
-  too hot.
+* Thermometer graph, blinks when temperature reaches a configurable threshold.
 
-* Tooltip shows current stats in text form.
+* Tooltip shows a textual summary of system status.
 
-* On click, it opens a `top` window with detailed system usage. This command can
-  be customized as a shortcut to your favorite monitoring tool.
+* On click, it opens a customizable `top` window for detailed system usage.
 
-* Preferences dialog allows customization of colors and options.
-
-* Transparent background for better desktop/theme integration.
+* Easy customization of colors and options, including transparency.
 
 
 ## Performance & Resource Consumption ##
+
+_(Outdated info but the same principle still applies)_
 
 gatotray aims to be a reliable and lightweight application, suitable for usage
 in the most resource constrained systems. Here are some measures comparing
@@ -61,11 +62,11 @@ CPU%  CPUtime    RSS  ElapsedTime  Version and options:
 ```
 So gatotray v2.0 eats roughly less than 6 bogomips in its several configurations
 , transparency costing ~10% additional CPU, and running the 32 bit version
-saving a bit under 1kB RSS memory.
+saving a bit under 1MB RSS memory.
 
 
 ### watchRSS ###
-Script "watchRSS" used to track memory and CPU usage in a simple way follows:
+Here is the "watchRSS" script used to produce the data above:
 
 ```
 #!sh
