@@ -161,10 +161,10 @@ cpu_temperature(void)
 
 // Memory info in megabytes
 typedef struct { int Total_MB, Free_MB, Available_MB; } MemInfo;
-MemInfo meminfo = {0};
 MemInfo
 mem_info(void)
 {
+    static MemInfo meminfo = {0};
     static gboolean unavailable = FALSE;
     if (unavailable)
         return meminfo;

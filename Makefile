@@ -5,17 +5,18 @@
 #  Briefly: Use it however suits you better and just give me due credit.
 #
 ### Changelog:
-# V3.3: Add free memory chart (from top)
+# V4.0: Track top resource consuming processes
+# V3.3: Add free memory chart (from proc/meminfo)
 # V3.2: Smooth Screensaver render with Cairo
 # V3.1: Bugfixes. Versioning
 # V3.0: Screensaver support.
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 3.3
+VERSION := 4.0
 CFLAGS := -std=c99 -Wall -O2 -ggdb -DVERSION=\"$(VERSION)\" $(CFLAGS)
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
-LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
+LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS) -lprocps
 
 targets := gatotray
 
@@ -24,7 +25,7 @@ all: $(targets)
 gatotray: gatotray.o
 
 gatotray.i386: gatotray.o.i386
-	$(LD) $(LDLIBS) -m32 -o $@ $^
+	$(LD) -m32 -o $@ $^ $(LDLIBS)
 
 install: gatotray
 	strip $^
@@ -34,12 +35,12 @@ install: gatotray
 
 deb: gatotray-$(VERSION).deb
 gatotray-$(VERSION).deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
-	strip gatotray
 	install -vD gatotray root/usr/bin/gatotray
+	strip root/usr/bin/gatotray
 	install -vD gatotray.desktop root/usr/share/applications/gatotray.desktop
 	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
+	sed -i 's/^Version:.*/Version: $(VERSION)/' Debian-Control
 	install -vD Debian-Control root/DEBIAN/control
-	sed -i 's/^Version:.*/Version: $(VERSION)/' Debian-Control root/DEBIAN/control
 	dpkg -b root $@
 
 # Additional: .api file for SciTE users...
