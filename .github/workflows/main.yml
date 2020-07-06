@@ -33,7 +33,8 @@ jobs:
     - name: Build .deb package
       run: make deb
     
-    - name: Upload .deb
+    - name: Upload Debian package
       uses: actions/upload-artifact@v2
       with:
-        path: '*.deb'
+        name: Debian package
+        path: gatotray-*.deb
