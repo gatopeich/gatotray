@@ -5,46 +5,43 @@
 // - Identify processes starving the system
 // - Do OOM kill before it is too late?
 
-// See https://manpages.debian.org/procps/openproc
-#include <proc/readproc.h>
-#include <proc/sysinfo.h>
+// Loosely based on procps lib
 #include <unistd.h>
 
-unsigned PAGE_KB(void) {
-    static unsigned pkb = 0;
-    return pkb ? pkb : (pkb = sysconf(_SC_PAGESIZE)/1024);
+double PAGE_GB(void) {
+    static double pkb = 0;
+    return pkb ? pkb : (pkb = sysconf(_SC_PAGESIZE)/(double)(1<<30));
 }
-jiff JIFF_PER_SEC(void) {
-    static jiff jps = 0;
-    return jps ? jps : (jps=sysconf(_SC_CLK_TCK));
+double TICKS_PER_SEC(void) {
+    static double ticks = 0;
+    if (!ticks) {
+        ticks = sysconf(_SC_CLK_TCK);
+        g_message("_SC_CLK_TCK = %g", ticks);
+    }
+    return ticks;
 }
 
+typedef unsigned long long ULL;
 typedef struct {
-    unsigned pid, rss_kb;
-    jiff prev_cpu, cpu_time;
-    char desc[200];
+    unsigned pid, rss;
+    ULL prev_cpu, cpu_time;
+    char comm[32];
 } ProcessInfo;
 
-double uptime_jiffies=0, interval_jiffies;
 ProcessInfo top_mem, top_cpu;
 
-void ProcessInfo_update(ProcessInfo* pi, proc_t* p)
+void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
 {
-    if (pi->pid == p->tid) {
-        pi->prev_cpu = pi->cpu_time;
-    } else {
-        pi->prev_cpu = 0;
-    }
-    pi->pid = p->tid;
-    pi->cpu_time = p->cutime + p->cstime;
-    pi->rss_kb = p->rss * PAGE_KB();
+    update->prev_cpu = (pi->pid==update->pid)? pi->cpu_time : 0;
+    *pi = *update;
 }
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
-    double gb = p->rss_kb/(double)(1<<20);
-    int cpu = (p->cpu_time - p->prev_cpu)*100/interval_jiffies;
-    g_string_append_printf(out, "#%d %.1fGB %d%%CPU ", p->pid, gb, cpu);
+    double gb = p->rss * PAGE_GB();
+    //int cpu = (p->cpu_time - p->prev_cpu)*100/interval_jiffies;
+    double time = p->cpu_time/TICKS_PER_SEC();
+    g_string_append_printf(out, "%s %.1fgb cpu=%gs ", p->comm, gb, time);
     char buf[200];
     sprintf(buf, "/proc/%u/cmdline", p->pid);
     FILE* f = fopen(buf, "r");
@@ -54,27 +51,66 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
             buf[i] = buf[i]>=' ' && buf[i]<='~' ? buf[i] : ' ';
         g_string_append_len(out, buf, len);
     }
+    fclose(f);
+}
+
+void ProcessInfo_scan(ProcessInfo* p, const char* pid)
+{
+    p->pid = atoi(pid);
+    char buf[256];
+    sprintf(buf, "/proc/%s/stat", pid);
+    FILE* f = fopen(buf, "r");
+    if (!f) {
+        strcpy(p->comm, "(defunct)");
+        return;
+    }
+    int len = fread(buf, 1, sizeof(buf)-1, f);
+    fclose(f);
+
+    // Extract executable name, handling extra parentheses e.g. ((sd-pam)) 
+    char* comm = strchr(buf, '(') + 1;
+    int comm_len = len - (comm-buf) - 1;
+    while (comm_len>0 && comm[comm_len] != ')') --comm_len;
+    int l = comm_len<sizeof(p->comm) ? comm_len : sizeof(p->comm)-1;
+    memcpy(p->comm, comm, l);
+    p->comm[l] = '\0';
+
+    ULL utime, stime, cutime, cstime;
+    int fields = sscanf(comm + comm_len + 3, // skip ") S "
+        "%*s %*s %*s %*s %*s " // -- ppid pgrp session tty tpgid
+        "%*s %*s %*s %*s %*s " // -- flags min_flt cmin_flt maj_flt cmaj_flt
+        "%llu %llu %llu %llu " // utime stime cutime cstime
+        "%*s %*s %*s %*s %*s " // -- priority, nice, nlwp, alarm, start_time
+        "%*s %u " // vsize, rss
+        , &utime, &stime, &cutime, &cstime, &p->rss);
+    p->cpu_time = utime + stime + cutime + cstime;
+    if (fields < 5) {
+        static int warned = 0;
+        if (!warned++)
+            g_message("Only got %d fields from /proc/%s/stat. comm=%s, rss=%u", fields, pid, p->comm, p->rss);
+        p->cpu_time = p->rss = 0;
+    }
 }
 
 void top_procs_refresh(void)
 {
-    PROCTAB* pTable = openproc(PROC_FILLSTAT);
-    top_cpu.cpu_time = top_mem.rss_kb = 0;
-    proc_t proc = {0};
-    while (readproc(pTable, &proc)) {
-        jiff cpu_time = proc.cutime + proc.cstime;
-        unsigned rss_kb = proc.rss * PAGE_KB();
-        if (rss_kb > top_mem.rss_kb)
-            ProcessInfo_update (&top_mem, &proc);
-        if (cpu_time > top_cpu.cpu_time)
-            ProcessInfo_update (&top_cpu, &proc);
+    static GDir* proc_dir = NULL;
+    if (proc_dir) {
+        g_dir_rewind(proc_dir);
+    } else {
+        proc_dir = g_dir_open ("/proc", 0, NULL);
     }
-
-    double uptime_secs, idle_secs;
-    uptime(&uptime_secs, &idle_secs);
-    jiff jiffies = uptime_secs * JIFF_PER_SEC();
-    interval_jiffies = jiffies - uptime_jiffies;
-    uptime_jiffies = jiffies;
-
-    closeproc(pTable);
+    top_cpu.cpu_time = top_mem.rss = 0;
+    const gchar* pid;
+    while ((pid = g_dir_read_name(proc_dir)))
+    {
+        if (pid[0] < '0' || pid[0] > '9')
+            continue;
+        ProcessInfo update;
+        ProcessInfo_scan(&update, pid);
+        if (update.rss > top_mem.rss)
+            ProcessInfo_update (&top_mem, &update);
+        if (update.cpu_time > top_cpu.cpu_time)
+            ProcessInfo_update (&top_cpu, &update);
+    }
 }

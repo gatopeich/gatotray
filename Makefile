@@ -14,9 +14,9 @@
 # V2.0: Added 32-bit target for 64 bits environment.
 
 VERSION := 4.0
-CFLAGS := -std=c99 -Wall -O2 -ggdb -DVERSION=\"$(VERSION)\" $(CFLAGS)
+CFLAGS := -std=c11 -Wall -O2 -g2 -DVERSION=\"$(VERSION)\" $(CFLAGS) -Wno-deprecated-declarations
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
-LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS) -lprocps
+LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
 
 targets := gatotray
 
