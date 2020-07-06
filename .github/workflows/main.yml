@@ -32,3 +32,8 @@ jobs:
     # Runs a set of commands using the runners shell
     - name: Build .deb package
       run: make deb
+    
+    - name: Upload .deb
+      uses: actions/upload-artifact@v2
+      with:
+        path: '*.deb'
