@@ -12,11 +12,11 @@ double PAGE_GB(void) {
     static double pkb = 0;
     return pkb ? pkb : (pkb = sysconf(_SC_PAGESIZE)/(double)(1<<30));
 }
-double TICKS_PER_SEC(void) {
-    static double ticks = 0;
+int TICKS_PER_SEC(void) {
+    static int ticks = 0;
     if (!ticks) {
         ticks = sysconf(_SC_CLK_TCK);
-        g_message("_SC_CLK_TCK = %g", ticks);
+        g_message("_SC_CLK_TCK = %d", ticks);
     }
     return ticks;
 }
@@ -24,7 +24,8 @@ double TICKS_PER_SEC(void) {
 typedef unsigned long long ULL;
 typedef struct {
     unsigned pid, rss;
-    ULL prev_cpu, cpu_time;
+    float cpu_usage;
+    ULL cpu_time, sample_time;
     char comm[32];
 } ProcessInfo;
 
@@ -32,16 +33,16 @@ ProcessInfo top_mem, top_cpu;
 
 void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
 {
-    update->prev_cpu = (pi->pid==update->pid)? pi->cpu_time : 0;
+    update->cpu_usage = (pi->pid != update->pid) ? 0 :
+        (update->cpu_time - pi->cpu_time)*100.0/(update->sample_time - pi->sample_time);
     *pi = *update;
 }
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     double gb = p->rss * PAGE_GB();
-    //int cpu = (p->cpu_time - p->prev_cpu)*100/interval_jiffies;
-    double time = p->cpu_time/TICKS_PER_SEC();
-    g_string_append_printf(out, "%s %.1fgb cpu=%gs ", p->comm, gb, time);
+    int time = p->cpu_time/TICKS_PER_SEC();
+    g_string_append_printf(out, "%s %.1fgb cpu=%ds(%.3g%%) ", p->comm, gb, time, p->cpu_usage);
     char buf[200];
     sprintf(buf, "/proc/%u/cmdline", p->pid);
     FILE* f = fopen(buf, "r");
@@ -54,15 +55,16 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
     fclose(f);
 }
 
-void ProcessInfo_scan(ProcessInfo* p, const char* pid)
+ProcessInfo ProcessInfo_scan(const char* pid)
 {
-    p->pid = atoi(pid);
+    ProcessInfo pi;
+    pi.pid = atoi(pid);
     char buf[256];
     sprintf(buf, "/proc/%s/stat", pid);
     FILE* f = fopen(buf, "r");
     if (!f) {
-        strcpy(p->comm, "(defunct)");
-        return;
+        strcpy(pi.comm, "(defunct)");
+        return pi;
     }
     int len = fread(buf, 1, sizeof(buf)-1, f);
     fclose(f);
@@ -71,9 +73,9 @@ void ProcessInfo_scan(ProcessInfo* p, const char* pid)
     char* comm = strchr(buf, '(') + 1;
     int comm_len = len - (comm-buf) - 1;
     while (comm_len>0 && comm[comm_len] != ')') --comm_len;
-    int l = comm_len<sizeof(p->comm) ? comm_len : sizeof(p->comm)-1;
-    memcpy(p->comm, comm, l);
-    p->comm[l] = '\0';
+    int l = comm_len<sizeof(pi.comm) ? comm_len : sizeof(pi.comm)-1;
+    memcpy(pi.comm, comm, l);
+    pi.comm[l] = '\0';
 
     ULL utime, stime, cutime, cstime;
     int fields = sscanf(comm + comm_len + 3, // skip ") S "
@@ -82,14 +84,16 @@ void ProcessInfo_scan(ProcessInfo* p, const char* pid)
         "%llu %llu %llu %llu " // utime stime cutime cstime
         "%*s %*s %*s %*s %*s " // -- priority, nice, nlwp, alarm, start_time
         "%*s %u " // vsize, rss
-        , &utime, &stime, &cutime, &cstime, &p->rss);
-    p->cpu_time = utime + stime + cutime + cstime;
+        , &utime, &stime, &cutime, &cstime, &pi.rss);
+    pi.cpu_time = utime + stime + cutime + cstime;
+    pi.sample_time = cpu_total_ticks;
     if (fields < 5) {
         static int warned = 0;
         if (!warned++)
-            g_message("Only got %d fields from /proc/%s/stat. comm=%s, rss=%u", fields, pid, p->comm, p->rss);
-        p->cpu_time = p->rss = 0;
+            g_message("Only got %d fields from /proc/%s/stat. comm=%s, rss=%u", fields, pid, pi.comm, pi.rss);
+        pi.cpu_time = pi.rss = 0;
     }
+    return pi;
 }
 
 void top_procs_refresh(void)
@@ -100,17 +104,19 @@ void top_procs_refresh(void)
     } else {
         proc_dir = g_dir_open ("/proc", 0, NULL);
     }
-    top_cpu.cpu_time = top_mem.rss = 0;
+    ProcessInfo max_rss, max_cpu;
+    max_cpu.cpu_time = max_rss.rss = 0;
     const gchar* pid;
     while ((pid = g_dir_read_name(proc_dir)))
     {
         if (pid[0] < '0' || pid[0] > '9')
             continue;
-        ProcessInfo update;
-        ProcessInfo_scan(&update, pid);
-        if (update.rss > top_mem.rss)
-            ProcessInfo_update (&top_mem, &update);
-        if (update.cpu_time > top_cpu.cpu_time)
-            ProcessInfo_update (&top_cpu, &update);
+        ProcessInfo proc = ProcessInfo_scan(pid);
+        if (proc.rss > max_rss.rss)
+            max_rss = proc;
+        if (proc.cpu_time > max_cpu.cpu_time)
+            max_cpu = proc;
     }
+    ProcessInfo_update (&top_mem, &max_rss);
+    ProcessInfo_update (&top_cpu, &max_cpu);
 }
