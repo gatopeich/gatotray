@@ -7,7 +7,7 @@ Since version 3.0, It can also run as a screensaver.
 
 ## License ##
 
-(c) 2011-2017 by gatopeich, licensed under a Creative Commons Attribution 3.0
+(c) 2011-2020 by gatopeich, licensed under a Creative Commons Attribution 3.0
 Unported License: http://creativecommons.org/licenses/by/3.0/
 Briefly: Use it however suits you better and just give me due credit.
 
