@@ -13,7 +13,6 @@ Maintainer: gatopeich <gatoguan-os@yahoo.com>
 Conflicts:
 Replaces:
 Provides: gatotray
-Description: gatotray is a tiny CPU monitor displaying several stats
-             graphically (usage, temperature, frequency) in small space,
-             and tight on resources.
-             It also contains a screensaver mode with Cairo vector rendering.
+Description: A lightweight graphical system monitor for the desktop tray.
+             Graphs CPU & RAM, temperature, and frequency, in icon size.
+             It also provides a colourful vector-rendered screensaver mode.
