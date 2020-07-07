@@ -327,9 +327,9 @@ timeout_cb (gpointer data)
         g_string_append_printf (info_text, "\nTemperature: %d°C", history[0].temp);
 
     g_string_append(info_text, "\nTop consumers:\n·mem: ");
-    ProcessInfo_to_GString(&top_mem, info_text);
+    ProcessInfo_to_GString(top_mem, info_text);
     g_string_append(info_text, "\n·cpu: ");
-    ProcessInfo_to_GString(&top_cpu, info_text);
+    ProcessInfo_to_GString(top_cpu, info_text);
 
     // Tooltip should not be refreshed too often, otherwise it never shows
     static time_t last_tooltip_update = 0;

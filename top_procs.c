@@ -8,6 +8,11 @@
 // Loosely based on procps lib
 #include <unistd.h>
 
+#ifdef NDEBUG
+#undef  g_debug
+#define g_debug(...) do{}while(0)
+#endif
+
 double PAGE_GB(void) {
     static double pkb = 0;
     return pkb ? pkb : (pkb = sysconf(_SC_PAGESIZE)/(double)(1<<30));
@@ -16,26 +21,32 @@ int TICKS_PER_SEC(void) {
     static int ticks = 0;
     if (!ticks) {
         ticks = sysconf(_SC_CLK_TCK);
-        g_message("_SC_CLK_TCK = %d", ticks);
+        g_debug("_SC_CLK_TCK = %d", ticks);
     }
     return ticks;
 }
 
+
 typedef unsigned long long ULL;
-typedef struct {
+typedef struct ProcessInfo {
+    struct ProcessInfo* next; // embedded single linked list
     unsigned pid, rss;
     float cpu_usage;
     ULL cpu_time, sample_time;
     char comm[32];
 } ProcessInfo;
 
-ProcessInfo top_mem, top_cpu;
+ProcessInfo *top_procs = NULL;
+
+ProcessInfo *top_mem = NULL, *top_cpu = NULL;
 
 void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
 {
     update->cpu_usage = (pi->pid != update->pid) ? 0 :
         (update->cpu_time - pi->cpu_time)*100.0/(update->sample_time - pi->sample_time);
+    void* next = pi->next;
     *pi = *update;
+    pi->next = next;
 }
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
@@ -43,16 +54,6 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
     double gb = p->rss * PAGE_GB();
     int time = p->cpu_time/TICKS_PER_SEC();
     g_string_append_printf(out, "%s %.1fgb cpu=%ds(%.3g%%) ", p->comm, gb, time, p->cpu_usage);
-    char buf[200];
-    sprintf(buf, "/proc/%u/cmdline", p->pid);
-    FILE* f = fopen(buf, "r");
-    int len;
-    if (f && (len=fread(buf, 1, sizeof(buf), f))) {
-        for (int i=0; i<len; i++)
-            buf[i] = buf[i]>=' ' && buf[i]<='~' ? buf[i] : ' ';
-        g_string_append_len(out, buf, len);
-    }
-    fclose(f);
 }
 
 ProcessInfo ProcessInfo_scan(const char* pid)
@@ -88,9 +89,7 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     pi.cpu_time = utime + stime + cutime + cstime;
     pi.sample_time = cpu_total_ticks;
     if (fields < 5) {
-        static int warned = 0;
-        if (!warned++)
-            g_message("Only got %d fields from /proc/%s/stat. comm=%s, rss=%u", fields, pid, pi.comm, pi.rss);
+        g_warning_once("Only got %d fields from /proc/%s/stat. comm=%s, rss=%u", fields, pid, pi.comm, pi.rss);
         pi.cpu_time = pi.rss = 0;
     }
     return pi;
@@ -104,19 +103,48 @@ void top_procs_refresh(void)
     } else {
         proc_dir = g_dir_open ("/proc", 0, NULL);
     }
-    ProcessInfo max_rss, max_cpu;
-    max_cpu.cpu_time = max_rss.rss = 0;
+
+    // static GString* debug;
+    //debug = debug ? g_string_assign(debug,"") : g_string_new(0);
+
+    // iterator pointers
+    ProcessInfo **it = &top_procs, *p = *it;
+
     const gchar* pid;
     while ((pid = g_dir_read_name(proc_dir)))
     {
+        //g_string_append_printf(debug, "%s, ", pid);
         if (pid[0] < '0' || pid[0] > '9')
             continue;
         ProcessInfo proc = ProcessInfo_scan(pid);
-        if (proc.rss > max_rss.rss)
-            max_rss = proc;
-        if (proc.cpu_time > max_cpu.cpu_time)
-            max_cpu = proc;
+
+        // /proc/stat/[pid] entries seem to be sorted by numeric pid
+        // new PIDs are expected to appear at end of the list
+        while (G_UNLIKELY(p && p->pid != proc.pid)) {
+            g_debug("Process %d (%s) died", p->pid, p->comm);
+            if (G_UNLIKELY(p->next && p->pid >= p->next->pid))
+                g_critical("Broken assumption that /proc/[pid] are always sorted. Please report bug!");
+            *it = p->next;
+            free(p);
+            p = *it;
+        }
+        if (p) {
+            g_debug("Updating process %d (%s)", p->pid, p->comm);
+            ProcessInfo_update(p, &proc);
+        } else {
+            // reached end of the list, add new
+            *it = p = malloc(sizeof(proc));
+            *p = proc;
+            p->next = NULL;
+            g_debug("Added process %d (%s)", p->pid, p->comm);
+        }
+
+        if (!top_mem || proc.rss > top_mem->rss)
+            top_mem = p;
+        if (!top_cpu || proc.cpu_time > top_cpu->cpu_time)
+            top_cpu = p;
+
+        p = *(it = &(p->next));
     }
-    ProcessInfo_update (&top_mem, &max_rss);
-    ProcessInfo_update (&top_cpu, &max_cpu);
+    //g_info("PIDs: %s", debug->str);
 }
