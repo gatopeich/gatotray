@@ -7,6 +7,7 @@
 
 // Loosely based on procps lib
 #include <unistd.h>
+#include <string.h>
 
 #ifdef NDEBUG
 #undef  g_debug
