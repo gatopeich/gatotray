@@ -13,7 +13,7 @@
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 4.0-b2.$(if $(GITHUB_SHA),$(shell echo $(GITHUB_SHA)|cut -c-7),dev)
+VERSION := 4.0-b3.$(if $(GITHUB_SHA),$(GITHUB_RUN_ID)-$(shell echo $(GITHUB_SHA)|cut -c-7),dev)
 CFLAGS := -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION)\" $(CFLAGS) -Wno-deprecated-declarations
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
 LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
@@ -39,8 +39,9 @@ gatotray-$(VERSION).deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
 	strip root/usr/bin/gatotray
 	install -vD gatotray.desktop root/usr/share/applications/gatotray.desktop
 	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
-	sed -i 's/^Version:.*/Version: $(VERSION)/' Debian-Control
+	install -vD gatotray3X.png root/usr/share/icons/gatotray.png
 	install -vD Debian-Control root/DEBIAN/control
+	sed -i 's/^Version:.*/Version: $(VERSION)/' root/DEBIAN/control
 	dpkg -b root $@
 
 # Additional: .api file for SciTE users...
