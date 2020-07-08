@@ -22,13 +22,15 @@
 
 typedef unsigned long long u64;
 typedef struct { int usage, iowait;  } CPU_Usage;
+
+u64 cpu_busy_ticks=0;
+u64 cpu_iowait_ticks=0;
+u64 cpu_total_ticks=0;
+
 CPU_Usage
 cpu_usage(int scale)
 {
     /* static stuff */
-    static u64 cpu_busy_prev=0;
-    static u64 cpu_iowait_prev=0;
-    static u64 cpu_total_prev=0;
 
     static FILE *proc_stat = NULL;
     if (!proc_stat) {
@@ -49,19 +51,19 @@ cpu_usage(int scale)
 
     CPU_Usage cpu;
 
-    if( busy > cpu_busy_prev )
-        cpu.usage = (u64)scale * (busy - cpu_busy_prev) / (total - cpu_total_prev);
+    if( busy > cpu_busy_ticks )
+        cpu.usage = (u64)scale * (busy - cpu_busy_ticks) / (total - cpu_total_ticks);
     else
         cpu.usage = 0;
 
-    if( iowait > cpu_iowait_prev )
-        cpu.iowait = (u64)scale * (iowait - cpu_iowait_prev) / (total - cpu_total_prev);
+    if( iowait > cpu_iowait_ticks )
+        cpu.iowait = (u64)scale * (iowait - cpu_iowait_ticks) / (total - cpu_total_ticks);
     else
         cpu.iowait = 0;
 
-    cpu_busy_prev = busy;
-    cpu_iowait_prev = iowait;
-    cpu_total_prev = total;
+    cpu_busy_ticks = busy;
+    cpu_iowait_ticks = iowait;
+    cpu_total_ticks = total;
 
     return cpu;
 }
@@ -161,10 +163,10 @@ cpu_temperature(void)
 
 // Memory info in megabytes
 typedef struct { int Total_MB, Free_MB, Available_MB; } MemInfo;
-MemInfo meminfo = {0};
 MemInfo
 mem_info(void)
 {
+    static MemInfo meminfo = {0};
     static gboolean unavailable = FALSE;
     if (unavailable)
         return meminfo;

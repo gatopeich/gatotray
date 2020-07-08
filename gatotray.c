@@ -2,7 +2,7 @@
 #define VERSION "3.x"
 #endif
 #define GATOTRAY_VERSION "gatotray v" VERSION
-#define GATOTRAY_URL "bitbucket.org/gatopeich/gatotray"
+#define GATOTRAY_URL "github.com/gatopeich/gatotray"
 /*
  * (c) 2011 by gatopeich, licensed under a Creative Commons Attribution 3.0
  * Unported License: http://creativecommons.org/licenses/by/3.0/
@@ -41,6 +41,7 @@
 // TODO: Include headers instead of full modules
 #include "cpu_usage.c"
 #include "settings.c"
+#include "top_procs.c"
 #include "gatotray.xpm"
 
 #define SCALE (1<<15)
@@ -256,7 +257,7 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
     return TRUE;
 }
 
-void feed_history() {
+MemInfo update_history() {
     history[0].cpu = cpu_usage(SCALE);
     int freq = cpu_freq(); // Frequency in MHz
     history[0].freq = scaling_max_freq > scaling_min_freq ?
@@ -265,6 +266,7 @@ void feed_history() {
     MemInfo mi = mem_info();
     if (mi.Total_MB)
         history[0].free_memory = mi.Available_MB * SCALE / mi.Total_MB;
+    return mi;
 }
 
 int
@@ -309,7 +311,8 @@ timeout_cb (gpointer data)
         blend(history[i].free_memory, history[i-1].free_memory);
         #undef blend
     }
-    feed_history();
+    MemInfo meminfo = update_history();
+    top_procs_refresh();
 
     if (!info_text)
         info_text = g_string_new(NULL);
@@ -321,13 +324,15 @@ timeout_cb (gpointer data)
             , PERCENT(history[0].free_memory), meminfo.Total_MB);
 
     if (history[0].temp)
-        g_string_append_printf (info_text, "\nTemperature: %d°C", history[0].temp);
+        g_string_append_printf (info_text, "\nTemperature: %d°C\n", history[0].temp);
+
+    top_procs_append_summary(info_text);
 
     // Tooltip should not be refreshed too often, otherwise it never shows
-    static gint64 last_tooltip_update = 0;
-    if (app_icon && (g_get_monotonic_time()-last_tooltip_update) > G_USEC_PER_SEC) {
+    static time_t last_tooltip_update = 0;
+    if (app_icon && time(NULL) != last_tooltip_update) {
         gtk_status_icon_set_tooltip (app_icon, info_text->str);
-        last_tooltip_update = g_get_monotonic_time();
+        last_tooltip_update = time(NULL);
     }
 
     redraw();
@@ -415,7 +420,7 @@ main( int argc, char *argv[] )
 
     history = g_malloc(sizeof(*history));
     hist_size = width = 1;
-    feed_history();
+    update_history();
 
     gchar** envp = g_get_environ();
     const gchar* wid = g_environ_getenv(envp,"XSCREENSAVER_WINDOW");
