@@ -13,17 +13,22 @@
 #define g_debug(...) do{}while(0)
 #endif
 
-double PAGE_GB(void) {
-    static double pkb = 0;
-    return pkb ? pkb : (pkb = sysconf(_SC_PAGESIZE)/(double)(1<<30));
-}
-int TICKS_PER_SEC(void) {
-    static int ticks = 0;
-    if (!ticks) {
-        ticks = sysconf(_SC_CLK_TCK);
-        g_debug("_SC_CLK_TCK = %d", ticks);
+float PAGE_GB(void) {
+    static float cached = 0;
+    if (!cached) {
+        cached = sysconf(_SC_PAGESIZE)*1.0/(1<<30);
+        g_info("_SC_PAGESIZE = %g", cached);
     }
-    return ticks;
+    return cached;
+}
+
+float TICKS_PER_SEC(void) {
+    static float cached = 0;
+    if (!cached) {
+        cached = sysconf(_SC_CLK_TCK);
+        g_info("_SC_CLK_TCK = %g", cached);
+    }
+    return cached;
 }
 
 
@@ -31,19 +36,17 @@ typedef unsigned long long ULL;
 typedef struct ProcessInfo {
     struct ProcessInfo* next; // embedded single linked list
     unsigned pid, rss;
-    float cpu_usage;
+    float cpu;
     ULL cpu_time, sample_time;
     char comm[32];
 } ProcessInfo;
 
-ProcessInfo *top_procs = NULL;
-
-ProcessInfo *top_mem = NULL, *top_cpu = NULL;
+ProcessInfo *top_procs = NULL, *top_cpu = NULL, *top_mem = NULL, *top_time = NULL;
 
 void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
 {
-    update->cpu_usage = (pi->pid != update->pid) ? 0 :
-        (update->cpu_time - pi->cpu_time)*100.0/(update->sample_time - pi->sample_time);
+    update->cpu = (update->cpu_time - pi->cpu_time) * 100.0
+                / (update->sample_time - pi->sample_time);
     void* next = pi->next;
     *pi = *update;
     pi->next = next;
@@ -51,9 +54,21 @@ void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
-    double gb = p->rss * PAGE_GB();
-    int time = p->cpu_time/TICKS_PER_SEC();
-    g_string_append_printf(out, "%s %.1fgb cpu=%ds(%.3g%%) ", p->comm, gb, time, p->cpu_usage);
+    float gb = p->rss * PAGE_GB();
+    float time = p->cpu_time/TICKS_PER_SEC();
+    g_string_append_printf(out, "%s: %.1f%%CPU %.2gGB %.4gs pid:%d"
+        , p->comm, p->cpu, gb, time, p->pid);
+    g_warn_if_fail(p->pid>0);
+}
+
+void top_procs_append_summary(GString* summary)
+{
+    g_string_append(summary, "Top consumers of %CPU, MEM, TIME+:\n· ");
+    ProcessInfo_to_GString(top_cpu, summary);
+    g_string_append(summary, "\n· ");
+    ProcessInfo_to_GString(top_mem, summary);
+    g_string_append(summary, "\n· ");
+    ProcessInfo_to_GString(top_time, summary);
 }
 
 ProcessInfo ProcessInfo_scan(const char* pid)
@@ -87,6 +102,7 @@ ProcessInfo ProcessInfo_scan(const char* pid)
         "%*s %u " // vsize, rss
         , &utime, &stime, &cutime, &cstime, &pi.rss);
     pi.cpu_time = utime + stime + cutime + cstime;
+    // TODO: pi.rss -= shr; // Do not count shared memory
     pi.sample_time = cpu_total_ticks;
     if (fields < 5) {
         g_warning_once("Only got %d fields from /proc/%s/stat. comm=%s, rss=%u", fields, pid, pi.comm, pi.rss);
@@ -97,6 +113,10 @@ ProcessInfo ProcessInfo_scan(const char* pid)
 
 void top_procs_refresh(void)
 {
+    static int delay = 0;
+    if (delay-->0)
+        return;
+    delay = 3; // TODO: Configure delay
     static GDir* proc_dir = NULL;
     if (proc_dir) {
         g_dir_rewind(proc_dir);
@@ -141,7 +161,9 @@ void top_procs_refresh(void)
 
         if (!top_mem || proc.rss > top_mem->rss)
             top_mem = p;
-        if (!top_cpu || proc.cpu_time > top_cpu->cpu_time)
+        if (!top_time || proc.cpu_time > top_time->cpu_time)
+            top_time = p;
+        if (!top_cpu || proc.cpu > top_cpu->cpu)
             top_cpu = p;
 
         p = *(it = &(p->next));
