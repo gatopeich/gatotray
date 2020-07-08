@@ -14,8 +14,8 @@ on:
 jobs:
   # This workflow contains a single job called "build"
   build:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+    # Build on the oldest supported ubuntu:
+    runs-on: ubuntu-16.04
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -36,5 +36,5 @@ jobs:
     - name: Upload Debian package
       uses: actions/upload-artifact@v2
       with:
-        name: Debian package
-        path: gatotray-*.deb
+        name: Debian packages
+        path: '*.deb'
