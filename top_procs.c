@@ -105,7 +105,7 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     pi.cpu_time = utime + stime + cutime + cstime;
     // TODO: pi.rss -= shr; // Do not count shared memory
     pi.sample_time = cpu_total_ticks;
-    if (fields < 6)
+    if (fields < 5)
         g_error("Only got %d valid fields from /proc/%s/stat: %s", fields, pid, buf);
     return pi;
 }
