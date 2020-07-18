@@ -316,7 +316,14 @@ timeout_cb (gpointer data)
 
     if (!info_text)
         info_text = g_string_new(NULL);
-    g_string_printf(info_text, GATOTRAY_VERSION "\nCPU %d%% busy, %d%% on I/O-wait @ %d MHz"
+
+    time_t now = time(NULL);
+    if (screensaver)
+        g_string_assign(info_text, ctime(&now));
+    else
+        g_string_set_size(info_text, 0);
+
+    g_string_append_printf(info_text, GATOTRAY_VERSION "\nCPU %d%% busy, %d%% on I/O-wait @ %d MHz"
         , PERCENT(history[0].cpu.usage), PERCENT(history[0].cpu.iowait), scaling_cur_freq);
 
     if (meminfo.Total_MB)
@@ -330,9 +337,9 @@ timeout_cb (gpointer data)
 
     // Tooltip should not be refreshed too often, otherwise it never shows
     static time_t last_tooltip_update = 0;
-    if (app_icon && time(NULL) != last_tooltip_update) {
+    if (app_icon && now != last_tooltip_update) {
         gtk_status_icon_set_tooltip (app_icon, info_text->str);
-        last_tooltip_update = time(NULL);
+        last_tooltip_update = now;
     }
 
     redraw();
