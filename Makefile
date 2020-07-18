@@ -13,7 +13,7 @@
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 4.0-b3.$(if $(GITHUB_SHA),$(GITHUB_RUN_ID)-$(shell echo $(GITHUB_SHA)|cut -c-7),dev)
+VERSION := 4.0-b4.$(shell date +%Y.%m.%d)
 CFLAGS := -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION)\" $(CFLAGS) -Wno-deprecated-declarations
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
 LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
@@ -51,12 +51,12 @@ gatotray-$(VERSION).deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
 
 ### Magic rules follow
 
-sources := $(wildcard *.c)
+sources := $(targets:%=%.c)
 objects := $(sources:.c=.o)
 depends := $(sources:.c=.d)
 
 clean:
-	rm -f $(objects) $(depends) $(targets)
+	rm -f *.d *.o $(targets)
 
 %.o: %.c %.d
 	$(CC) -c $(CPPFLAGS) $(CFLAGS) -o $@ $<
