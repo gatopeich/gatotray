@@ -320,11 +320,11 @@ timeout_cb (gpointer data)
         , PERCENT(history[0].cpu.usage), PERCENT(history[0].cpu.iowait), scaling_cur_freq);
 
     if (meminfo.Total_MB)
-        g_string_append_printf (info_text, "\nAvailable RAM: %d%% of %d MB"
-            , PERCENT(history[0].free_memory), meminfo.Total_MB);
+        g_string_append_printf (info_text, "\nFree RAM: %d/%d MB"
+            , RESCALE(history[0].free_memory, meminfo.Total_MB), meminfo.Total_MB);
 
     if (history[0].temp)
-        g_string_append_printf (info_text, "\nTemperature: %d°C\n", history[0].temp);
+        g_string_append_printf (info_text, ". Temperature: %d°C\n", history[0].temp);
 
     top_procs_append_summary(info_text);
 
