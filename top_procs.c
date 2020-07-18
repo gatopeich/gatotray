@@ -37,38 +37,31 @@ typedef unsigned long long ULL;
 typedef struct ProcessInfo {
     struct ProcessInfo* next; // embedded single linked list
     unsigned pid, rss;
-    float cpu;
-    ULL cpu_time, sample_time;
+    ULL cpu_time, io_time, sample_time;
+    float cpu, io_wait;
     char comm[32];
 } ProcessInfo;
 
-ProcessInfo *top_procs = NULL, *top_cpu = NULL, *top_mem = NULL, *top_time = NULL;
-
-void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
-{
-    update->cpu = (update->cpu_time - pi->cpu_time) * 100.0
-                / (update->sample_time - pi->sample_time);
-    void* next = pi->next;
-    *pi = *update;
-    pi->next = next;
-}
+ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_time=NULL, *top_io=NULL;
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     float gb = p->rss * PAGE_GB();
     float time = p->cpu_time/TICKS_PER_SEC();
-    g_string_append_printf(out, "%s: %.1f%%CPU %.2gGB %.4gs pid:%d"
-        , p->comm, p->cpu, gb, time, p->pid);
+    g_string_append_printf(out, "%s %.2g%%cpu %.2g%%io %.2ggb %.4gs pid:%d"
+        , p->comm, p->cpu, p->io_wait, gb, time, p->pid);
     g_warn_if_fail(p->pid>0);
 }
 
 void top_procs_append_summary(GString* summary)
 {
-    g_string_append(summary, "Top consumers of %CPU, MEM, TIME+:\n· ");
+    g_string_append(summary, "Top consumers of...\n·%CPU: ");
     ProcessInfo_to_GString(top_cpu, summary);
-    g_string_append(summary, "\n· ");
+    g_string_append(summary, "\n·I/O: ");
+    ProcessInfo_to_GString(top_io, summary);
+    g_string_append(summary, "\n·RSS: ");
     ProcessInfo_to_GString(top_mem, summary);
-    g_string_append(summary, "\n· ");
+    g_string_append(summary, "\n·TIME+: ");
     ProcessInfo_to_GString(top_time, summary);
 }
 
@@ -76,7 +69,7 @@ ProcessInfo ProcessInfo_scan(const char* pid)
 {
     ProcessInfo pi;
     pi.pid = atoi(pid);
-    char buf[256];
+    char buf[512];
     sprintf(buf, "/proc/%s/stat", pid);
     FILE* f = fopen(buf, "r");
     if (!f) {
@@ -94,20 +87,35 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     memcpy(pi.comm, comm, l);
     pi.comm[l] = '\0';
 
-    ULL utime, stime, cutime, cstime;
-    int fields = sscanf(comm + comm_len + 3, // skip ") S "
-        "%*s %*s %*s %*s %*s " // -- ppid pgrp session tty tpgid
-        "%*s %*s %*s %*s %*s " // -- flags min_flt cmin_flt maj_flt cmaj_flt
-        "%llu %llu %llu %llu " // utime stime cutime cstime
-        "%*s %*s %*s %*s %*s " // -- priority, nice, nlwp, alarm, start_time
-        "%*s %u " // vsize, rss
-        , &utime, &stime, &cutime, &cstime, &pi.rss);
+    // Hacky low level field parsing just for fun
+    char *fp = comm + comm_len + 4; // skip parens and spaces around 1-char field #3 "state"
+    int field = 4;
+    #define move_to(n) while(field<n) { while(*fp++>' ') {} ++field; }
+    #define read_field(n, name) ULL name=0; move_to(n); \
+        do {name = name*10 + *fp - '0';} while (*++fp >= '0'); \
+        ++fp; ++field // Finish pointing to next field
+    read_field(14, utime);
+    read_field(15, stime);
+    read_field(16, cutime);
+    read_field(17, cstime);
     pi.cpu_time = utime + stime + cutime + cstime;
-    // TODO: pi.rss -= shr; // Do not count shared memory
+
+    read_field(24, rss); pi.rss = rss; // TODO: Discount shared memory
+    // printf("14:17 %llu %llu %llu %llu 24:%llu ~ %s\n", utime, stime, cutime, cstime, rss, buf);
+    read_field(42, io); pi.io_time = io;
+
     pi.sample_time = cpu_total_ticks;
-    if (fields < 5)
-        g_error("Only got %d valid fields from /proc/%s/stat: %s", fields, pid, buf);
     return pi;
+}
+
+void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
+{
+    float percent_time = 100.0 / (update->sample_time - pi->sample_time);
+    update->cpu = (update->cpu_time - pi->cpu_time) * percent_time;
+    update->io_wait = (update->io_time - pi->io_time) * percent_time;
+    void* next = pi->next;
+    *pi = *update;
+    pi->next = next;
 }
 
 void top_procs_refresh(void)
@@ -164,6 +172,8 @@ void top_procs_refresh(void)
             top_time = p;
         if (!top_cpu || proc.cpu > top_cpu->cpu)
             top_cpu = p;
+        if (!top_io || proc.io_wait > top_io->io_wait)
+            top_io = p;
 
         p = *(it = &(p->next));
     }
