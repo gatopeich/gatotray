@@ -42,7 +42,9 @@ typedef struct ProcessInfo {
     char comm[32];
 } ProcessInfo;
 
-ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_time=NULL, *top_io=NULL;
+int procs_total=0, procs_idle=0;
+ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_time=NULL, *top_io=NULL
+    , *procs_self=NULL;
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
@@ -55,14 +57,17 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 
 void top_procs_append_summary(GString* summary)
 {
-    g_string_append(summary, "Top consumers of...\n·%CPU: ");
+    g_string_append_printf(summary, "%d/%d idle processes", procs_idle, procs_total);
+    g_string_append(summary, "\n\nTop consumers:\n· %CPU: ");
     ProcessInfo_to_GString(top_cpu, summary);
-    g_string_append(summary, "\n·I/O: ");
+    g_string_append(summary, "\n· I/O: ");
     ProcessInfo_to_GString(top_io, summary);
-    g_string_append(summary, "\n·RSS: ");
+    g_string_append(summary, "\n· RSS: ");
     ProcessInfo_to_GString(top_mem, summary);
-    g_string_append(summary, "\n·TIME+: ");
+    g_string_append(summary, "\n· TIME+: ");
     ProcessInfo_to_GString(top_time, summary);
+    g_string_append(summary, "\n\nself: ");
+    ProcessInfo_to_GString(procs_self, summary);
 }
 
 ProcessInfo ProcessInfo_scan(const char* pid)
@@ -125,9 +130,11 @@ void top_procs_refresh(void)
         return;
     delay = 3; // TODO: Configure delay
     static GDir* proc_dir = NULL;
+    int find_my_pid = 0;
     if (proc_dir) {
         g_dir_rewind(proc_dir);
     } else {
+        find_my_pid = getpid();
         proc_dir = g_dir_open ("/proc", 0, NULL);
     }
 
@@ -138,11 +145,13 @@ void top_procs_refresh(void)
     ProcessInfo **it = &top_procs, *p = *it;
 
     const gchar* pid;
+    procs_total = procs_idle = 0;
     while ((pid = g_dir_read_name(proc_dir)))
     {
         //g_string_append_printf(debug, "%s, ", pid);
         if (pid[0] < '0' || pid[0] > '9')
             continue;
+        ++procs_total;
         ProcessInfo proc = ProcessInfo_scan(pid);
 
         // /proc/stat/[pid] entries seem to be sorted by numeric pid
@@ -158,12 +167,16 @@ void top_procs_refresh(void)
         if (p) {
             g_debug("Updating process %d (%s)", p->pid, p->comm);
             ProcessInfo_update(p, &proc);
+            procs_idle += !p->cpu;
         } else {
             // reached end of the list, add new
             *it = p = malloc(sizeof(proc));
             *p = proc;
             p->next = NULL;
+            p->cpu = p->io_wait = 0;
             g_debug("Added process %d (%s)", p->pid, p->comm);
+            if (find_my_pid && p->pid == find_my_pid)
+                procs_self = p;
         }
 
         if (!top_mem || proc.rss > top_mem->rss)
