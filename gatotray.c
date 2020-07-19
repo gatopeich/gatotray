@@ -344,8 +344,8 @@ timeout_cb (gpointer data)
 
     redraw();
 
-    // Re-add every time to handle changes in refresh_rate
-    g_timeout_add(refresh_rate, timeout_cb, NULL);
+    // Re-add every time to handle changes in refresh_interval_ms
+    g_timeout_add(refresh_interval_ms, timeout_cb, NULL);
     return FALSE;
 }
 
@@ -483,7 +483,7 @@ main( int argc, char *argv[] )
         gtk_status_icon_set_tooltip(app_icon, GATOTRAY_VERSION);
     }
     g_free(envp);
-    g_timeout_add(refresh_rate, timeout_cb, NULL);
+    g_timeout_add(refresh_interval_ms, timeout_cb, NULL);
     gtk_main();
     return 0;
 }
