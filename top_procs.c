@@ -126,9 +126,9 @@ void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
 void top_procs_refresh(void)
 {
     static int delay = 0;
-    if (delay-->0)
+    if (--delay > 0)
         return;
-    delay = 3; // TODO: Configure delay
+    delay = top_refresh_ms/refresh_interval_ms;
     static GDir* proc_dir = NULL;
     int find_my_pid = 0;
     if (proc_dir) {

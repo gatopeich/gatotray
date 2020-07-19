@@ -45,7 +45,8 @@ PrefColor pref_colors[] = {
     { "Max temperature", "red", &temp_max_color },
 };
 
-gint refresh_rate = 1000;
+gint refresh_interval_ms = 1000;
+gint top_refresh_ms = 3000;
 gint pref_temp_alarm = 85;
 typedef struct {
     const gchar* description;
@@ -56,13 +57,13 @@ typedef struct {
     GtkWidget* widget;
 } PrefRangeval;
 PrefRangeval pref_rangevals[] = {
-    { "Refresh rate (ms)", &refresh_rate, 100, 100000 },
+    { "Basic refresh interval (ms)", &refresh_interval_ms, 100, 100000 },
+    { "Top refresh interval (ms)", &top_refresh_ms, 100, 100000 },
     { "High temperature alarm", &pref_temp_alarm, 30, 100, &pref_thermometer },
 };
 
 
 char* pref_custom_command;
-// char* pref_temp_file;
 typedef struct {
     gchar* description;
     gchar** value;
@@ -70,7 +71,6 @@ typedef struct {
 } PrefString;
 PrefString pref_strings[] = {
     { "Custom command", &pref_custom_command, "xterm -geometry 75x13{position} -e top"},
-    // { "Temperature file", &pref_temp_file, "/sys/class/thermal/thermal_zone0/temp"},
 };
 
 void preferences_changed() {
