@@ -38,20 +38,20 @@ typedef struct ProcessInfo {
     struct ProcessInfo* next; // embedded single linked list
     unsigned pid, rss;
     ULL cpu_time, io_time, sample_time;
-    float cpu, io_wait;
+    float cpu, io_wait, average_cpu;
     char comm[32];
 } ProcessInfo;
 
 int procs_total=0, procs_idle=0;
-ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_time=NULL, *top_io=NULL
+ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
     , *procs_self=NULL;
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     float gb = p->rss * PAGE_GB();
-    float time = p->cpu_time/TICKS_PER_SEC();
-    g_string_append_printf(out, "%s %.2g%%cpu %.2g%%io %.2ggb %.4gs pid:%d"
-        , p->comm, p->cpu, p->io_wait, gb, time, p->pid);
+    #define max2decs(g) (g>.005?g:.0)
+    g_string_append_printf(out, "%s %.2g%%cpu %.2g%%avg %.2g%%io %.2ggb pid:%d"
+        , p->comm, max2decs(p->cpu), max2decs(p->average_cpu), p->io_wait, gb, p->pid);
     g_warn_if_fail(p->pid>0);
 }
 
@@ -60,12 +60,12 @@ void top_procs_append_summary(GString* summary)
     g_string_append_printf(summary, "%d/%d idle processes", procs_idle, procs_total);
     g_string_append(summary, "\n\nTop consumers:\n· %CPU: ");
     ProcessInfo_to_GString(top_cpu, summary);
+    g_string_append(summary, "\n· Average: ");
+    ProcessInfo_to_GString(top_avg, summary);
     g_string_append(summary, "\n· I/O: ");
     ProcessInfo_to_GString(top_io, summary);
     g_string_append(summary, "\n· RSS: ");
     ProcessInfo_to_GString(top_mem, summary);
-    g_string_append(summary, "\n· TIME+: ");
-    ProcessInfo_to_GString(top_time, summary);
     g_string_append(summary, "\n\nself: ");
     ProcessInfo_to_GString(procs_self, summary);
 }
@@ -99,15 +99,22 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     #define read_field(n, name) ULL name=0; move_to(n); \
         do {name = name*10 + *fp - '0';} while (*++fp >= '0'); \
         ++fp; ++field // Finish pointing to next field
+
+    // Add up CPU usage...
     read_field(14, utime);
     read_field(15, stime);
+    // ...including reaped subprocesses:
     read_field(16, cutime);
     read_field(17, cstime);
     pi.cpu_time = utime + stime + cutime + cstime;
 
+    // Calculate CPU average since process started
+    read_field(22, starttime);
+    pi.average_cpu = pi.cpu_time * 100.0 / (cpu_total_ticks - starttime);
+
     read_field(24, rss); pi.rss = rss; // TODO: Discount shared memory
     // printf("14:17 %llu %llu %llu %llu 24:%llu ~ %s\n", utime, stime, cutime, cstime, rss, buf);
-    read_field(42, io); pi.io_time = io;
+    read_field(42, delayacct_blkio_ticks); pi.io_time = delayacct_blkio_ticks;
 
     pi.sample_time = cpu_total_ticks;
     return pi;
@@ -138,9 +145,6 @@ void top_procs_refresh(void)
         proc_dir = g_dir_open ("/proc", 0, NULL);
     }
 
-    // static GString* debug;
-    //debug = debug ? g_string_assign(debug,"") : g_string_new(0);
-
     // iterator pointers
     ProcessInfo **it = &top_procs, *p = *it;
 
@@ -148,7 +152,6 @@ void top_procs_refresh(void)
     procs_total = procs_idle = 0;
     while ((pid = g_dir_read_name(proc_dir)))
     {
-        //g_string_append_printf(debug, "%s, ", pid);
         if (pid[0] < '0' || pid[0] > '9')
             continue;
         ++procs_total;
@@ -181,8 +184,8 @@ void top_procs_refresh(void)
 
         if (!top_mem || proc.rss > top_mem->rss)
             top_mem = p;
-        if (!top_time || proc.cpu_time > top_time->cpu_time)
-            top_time = p;
+        if (!top_avg || proc.average_cpu > top_avg->average_cpu)
+            top_avg = p;
         if (!top_cpu || proc.cpu > top_cpu->cpu)
             top_cpu = p;
         if (!top_io || proc.io_wait > top_io->io_wait)
@@ -190,5 +193,4 @@ void top_procs_refresh(void)
 
         p = *(it = &(p->next));
     }
-    //g_info("PIDs: %s", debug->str);
 }
