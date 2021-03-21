@@ -144,9 +144,9 @@ void pref_init()
     for(PrefString* s=pref_strings; s < pref_strings+G_N_ELEMENTS(pref_strings); s++)
     {
         GError* gerror = NULL;
-        *s->value = s->default_value;
         gchar* value = g_key_file_get_string(pref_file, "Options", s->description, &gerror);
-        if(!gerror) *s->value = value;
+        if (!gerror) *s->value = value;
+        else *s->value = g_strdup(s->default_value);
     }
     preferences_changed();
 }
