@@ -42,7 +42,7 @@ typedef struct ProcessInfo {
     char comm[32];
 } ProcessInfo;
 
-int procs_total=0, procs_idle=0;
+int procs_total=0, procs_active=0;
 ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
     , *procs_self=NULL;
 
@@ -57,7 +57,7 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 
 void top_procs_append_summary(GString* summary)
 {
-    g_string_append_printf(summary, "%d/%d idle processes", procs_idle, procs_total);
+    g_string_append_printf(summary, "\n%d processes, %d active", procs_total, procs_active);
     g_string_append(summary, "\n\nTop consumers:\n· %CPU: ");
     ProcessInfo_to_GString(top_cpu, summary);
     g_string_append(summary, "\n· Average: ");
@@ -149,7 +149,7 @@ void top_procs_refresh(void)
     ProcessInfo **it = &top_procs, *p = *it;
 
     const gchar* pid;
-    procs_total = procs_idle = 0;
+    procs_total = procs_active = 0;
     while ((pid = g_dir_read_name(proc_dir)))
     {
         if (pid[0] < '0' || pid[0] > '9')
@@ -170,7 +170,7 @@ void top_procs_refresh(void)
         if (p) {
             g_debug("Updating process %d (%s)", p->pid, p->comm);
             ProcessInfo_update(p, &proc);
-            procs_idle += !p->cpu;
+            procs_active += !!p->cpu;
         } else {
             // reached end of the list, add new
             *it = p = malloc(sizeof(proc));
