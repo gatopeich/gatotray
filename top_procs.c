@@ -50,7 +50,7 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     float gb = p->rss * PAGE_GB();
     #define max2decs(g) (g>.005?g:.0)
-    g_string_append_printf(out, "%s %.2g%%cpu %.2g%%avg %.2g%%io %.2ggb pid:%d"
+    g_string_append_printf(out, "%s: %.2g%%cpu %.2g%%avg %.2g%%io %.2ggb (%d)"
         , p->comm, max2decs(p->cpu), max2decs(p->average_cpu), p->io_wait, gb, p->pid);
     g_warn_if_fail(p->pid>0);
 }
@@ -58,15 +58,21 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 void top_procs_append_summary(GString* summary)
 {
     g_string_append_printf(summary, "\n%d processes, %d active", procs_total, procs_active);
-    g_string_append(summary, "\n\nTop consumers:\n· %CPU: ");
+    g_string_append(summary, "\n\nTop consumers:\n· ");
     ProcessInfo_to_GString(top_cpu, summary);
-    g_string_append(summary, "\n· Average: ");
-    ProcessInfo_to_GString(top_avg, summary);
-    g_string_append(summary, "\n· I/O: ");
-    ProcessInfo_to_GString(top_io, summary);
-    g_string_append(summary, "\n· RSS: ");
-    ProcessInfo_to_GString(top_mem, summary);
-    g_string_append(summary, "\n\nself: ");
+    if (top_avg != top_cpu) {
+        g_string_append(summary, "\n· ");
+        ProcessInfo_to_GString(top_avg, summary);
+    }
+    if (top_io != top_avg && top_io != top_cpu) {
+        g_string_append(summary, "\n· ");
+        ProcessInfo_to_GString(top_io, summary);
+    }
+    if (top_mem != top_io && top_mem != top_avg && top_mem != top_cpu) {
+        g_string_append(summary, "\n· ");
+        ProcessInfo_to_GString(top_mem, summary);
+    }
+    g_string_append(summary, "\n\n");
     ProcessInfo_to_GString(procs_self, summary);
 }
 
