@@ -13,12 +13,12 @@
 #include <error.h>
 #include <errno.h>
 
-#ifdef __G_LIB_H__
+#include <glib.h>
+
 #define error(_s, _e, fmt, args...) do { \
     g_message("ERROR %d:" fmt, _e, ##args); \
     if (_s) exit(_s); \
 } while(0)
-#endif
 
 typedef unsigned long long u64;
 typedef struct { int usage, iowait;  } CPU_Usage;
@@ -72,11 +72,12 @@ int
 file_read_int(const char* file, int on_error)
 {
     FILE* fp = fopen(file, "r");
-    if (fp)
-    {
+    if (fp) {
         int i;
-        if (fscanf(fp, "%d", &i))
+        if (fscanf(fp, "%d", &i)) {
+            fclose(fp);
             return i;
+        }
     }
     error(0, errno, "Can't read uint from %s", file);
     return on_error;
@@ -100,7 +101,7 @@ cpu_freq(void)
     if (cur_freq_file) {
         rewind(cur_freq_file);
         fflush(cur_freq_file);
-        if (fscanf(cur_freq_file, "%u", &scaling_cur_freq) == 1) {
+        if (fscanf(cur_freq_file, "%d", &scaling_cur_freq) == 1) {
             if (scaling_max_freq) {
                 scaling_cur_freq /= 1000; // KHz -> MHz
                 if (scaling_cur_freq < scaling_min_freq)
