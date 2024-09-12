@@ -94,8 +94,11 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     char* comm = strchr(buf, '(') + 1;
     int comm_len = len - (comm-buf) - 1;
     while (comm_len>0 && comm[comm_len] != ')') --comm_len;
-    int l = comm_len<sizeof(pi.comm) ? comm_len : sizeof(pi.comm)-1;
-    memcpy(pi.comm, comm, l);
+    int l = 0;
+    while (l < comm_len && l < (sizeof(pi.comm)-1)) {
+        char c = comm[l];
+        pi.comm[l++] = (c >= 32 && c <= 126) ? c : '?';  // remove non-ASCII characters
+    }
     pi.comm[l] = '\0';
 
     // Hacky low level field parsing just for fun
