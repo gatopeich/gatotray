@@ -15,9 +15,10 @@ Briefly: Use it however suits you better and just give me due credit.
 ## Dependencies
 Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-dev`
 
+
 ## Features ##
 
-* Really lightweight, colourful, user friendly, broadly compatible.
+* Very lightweight, colourful, user friendly, broadly compatible.
 
 * Tracks top consuming processes.
 

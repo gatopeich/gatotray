@@ -5,6 +5,7 @@
 #  Briefly: Use it however suits you better and just give me due credit.
 #
 ### Changelog:
+# V4.1: Security fixes
 # V4.0: Track top resource consuming processes
 # V3.3: Add free memory chart (from proc/meminfo)
 # V3.2: Smooth Screensaver render with Cairo
@@ -13,7 +14,7 @@
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 4.0-b5.$(shell date +%Y.%m.%d)
+VERSION := 4.1.$(shell date +%Y.%m.%d)
 CFLAGS := -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION)\" $(CFLAGS) -Wno-deprecated-declarations
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
 LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
