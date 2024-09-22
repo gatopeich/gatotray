@@ -29,7 +29,7 @@ jobs:
       run: make deb
     
     - name: Upload Debian package
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: Debian packages
         path: '*.deb'
