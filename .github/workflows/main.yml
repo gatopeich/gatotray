@@ -15,7 +15,7 @@ jobs:
   # This workflow contains a single job called "build"
   build:
     # Build on the oldest supported ubuntu:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -23,7 +23,9 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Install dependencies
-      run: sudo apt install libgtk2.0-dev libprocps-dev
+      run: |
+        sudo apt update
+        sudo apt install libgtk2.0-dev libprocps-dev
 
     - name: Build .deb package
       run: make deb
