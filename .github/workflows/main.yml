@@ -33,3 +33,14 @@ jobs:
       with:
         name: Debian packages
         path: '*.deb'
+
+    - name: Publish AUR package
+      uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+      with:
+        pkgname: gatotray
+        pkgbuild: ./PKGBUILD
+        commit_username: gatopeich
+        commit_email: ${{ secrets.AUR_EMAIL }}
+        ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        ssh_keyscan_types: rsa,ecdsa,ed25519
+        test: true

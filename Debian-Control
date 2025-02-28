@@ -1,5 +1,5 @@
 Package: gatotray
-Version: 4.0
+Version: 4.1.20250228
 Section: Accessories
 Priority: optional
 Architecture: all
@@ -9,7 +9,7 @@ Pre-Depends:
 Recommends: xterm | procps | acpid
 Suggests:
 Installed-Size: 25
-Maintainer: gatopeich <gatoguan-os@yahoo.com>
+Maintainer: gatopeich <gatopeich@pm.me>
 Conflicts:
 Replaces:
 Provides: gatotray
