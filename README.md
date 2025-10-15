@@ -42,6 +42,31 @@ Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-de
 * Easy customization of colors and options, including transparency.
 
 
+## Configuration ##
+
+gatotray provides an easy-to-use preferences dialog accessible by right-clicking the tray icon and selecting "Preferences".
+
+### Temperature Sensor Selection
+
+By default, gatotray automatically selects the first available temperature sensor it finds. However, systems often have multiple temperature sensors (CPU, GPU, SSD, etc.), and you may want to monitor a specific one.
+
+To select a specific temperature sensor:
+
+1. Right-click the gatotray icon in your system tray
+2. Click "Preferences"
+3. In the preferences dialog, find the "Temperature sensor:" dropdown
+4. Select your preferred sensor from the list, or choose "Auto (first available)" for automatic selection
+
+The dropdown shows all available temperature sensors with descriptive labels when possible (e.g., "coretemp (hwmon0 temp1)" for CPU temperature).
+
+gatotray searches for temperature sensors in the following locations:
+- `/sys/class/hwmon/hwmonN/temp*_input` (hardware monitoring sensors)
+- `/sys/class/thermal/thermal_zoneN/temp` (thermal zones)
+- `/proc/acpi/thermal_zone/*/temperature` (ACPI thermal zones)
+
+Your selection is saved in `~/.config/gatotrayrc` and will be remembered across sessions.
+
+
 ## Performance & Resource Consumption ##
 
 _(Outdated info but the same principle still applies)_
