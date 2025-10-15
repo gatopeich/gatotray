@@ -18,14 +18,13 @@ static gchar* pref_filename =  "gatotrayrc";
 static GKeyFile* pref_file = NULL;
 
 gboolean pref_transparent = TRUE;
-gboolean pref_thermometer = TRUE;
+gboolean pref_thermometer = TRUE; // Now controlled by temp sensor dropdown
 typedef struct {
     const gchar* description;
     gboolean* value;
 } PrefBoolean;
 PrefBoolean pref_booleans[] = {
     { "Transparent background", &pref_transparent },
-    { "Show Thermometer", &pref_thermometer },
 };
 
 GdkColor mem_color, fg_color, bg_color, iow_color;
@@ -70,9 +69,6 @@ PrefRangeval pref_rangevals[] = {
 char* pref_custom_command;
 char* pref_temp_sensor = NULL;
 
-// Widget to be enabled/disabled based on thermometer preference
-static GtkWidget* temp_sensor_combo_container = NULL;
-
 typedef struct {
     gchar* description;
     gchar** value;
@@ -94,10 +90,6 @@ void preferences_changed() {
     for (PrefRangeval* rv=pref_rangevals; rv < pref_rangevals+G_N_ELEMENTS(pref_rangevals); rv++)
         if (rv->enabler && rv->widget)
             gtk_widget_set_sensitive (rv->widget, *rv->enabler);
-    
-    // Enable/disable temperature sensor dropdown based on thermometer preference
-    if (temp_sensor_combo_container)
-        gtk_widget_set_sensitive(temp_sensor_combo_container, pref_thermometer);
 }
 
 void on_option_toggled(GtkToggleButton *togglebutton, PrefBoolean *b) {
@@ -127,13 +119,20 @@ void on_temp_sensor_changed(GtkComboBox *combo, gpointer user_data) {
     int active = gtk_combo_box_get_active(combo);
     
     if (active == 0) {
-        // Auto selected
+        // None selected - disable thermometer
         g_free(pref_temp_sensor);
         pref_temp_sensor = NULL;
         pref_temp_sensor_path = NULL;
+        pref_thermometer = FALSE;
+    } else if (active == 1) {
+        // Auto selected - enable thermometer with auto-detection
+        g_free(pref_temp_sensor);
+        pref_temp_sensor = NULL;
+        pref_temp_sensor_path = NULL;
+        pref_thermometer = TRUE;
     } else {
         // Specific sensor selected
-        gchar* key = g_strdup_printf("sensor-path-%d", active);
+        gchar* key = g_strdup_printf("sensor-path-%d", active - 1); // -1 because we now have "None" at index 0
         const char* path = g_object_get_data(G_OBJECT(combo), key);
         g_free(key);
         
@@ -141,6 +140,7 @@ void on_temp_sensor_changed(GtkComboBox *combo, gpointer user_data) {
             g_free(pref_temp_sensor);
             pref_temp_sensor = g_strdup(path);
             pref_temp_sensor_path = pref_temp_sensor;
+            pref_thermometer = TRUE;
         }
     }
     
@@ -185,13 +185,24 @@ void pref_init()
         if (!gerror) *s->value = value;
         else *s->value = g_strdup(s->default_value);
     }
+    
+    // Load legacy "Show Thermometer" preference for backwards compatibility
+    {
+        GError* gerror = NULL;
+        gboolean value = g_key_file_get_boolean(pref_file, "Options", "Show Thermometer", &gerror);
+        if (!gerror) {
+            pref_thermometer = value;
+        }
+    }
+    
     // Load temperature sensor preference
     {
         GError* gerror = NULL;
         gchar* value = g_key_file_get_string(pref_file, "Options", "Temperature sensor", &gerror);
-        if (!gerror && value) {
+        if (!gerror && value && value[0]) {
             pref_temp_sensor_path = value;
             pref_temp_sensor = value;
+            pref_thermometer = TRUE; // Enable thermometer if sensor is set
         }
     }
     preferences_changed();
@@ -207,6 +218,10 @@ void pref_save()
     }
     for(PrefBoolean* b=pref_booleans; b < pref_booleans+G_N_ELEMENTS(pref_booleans); b++)
         g_key_file_set_boolean(pref_file, "Options", b->description, *b->value);
+    
+    // Save thermometer state (controlled by temperature dropdown)
+    g_key_file_set_boolean(pref_file, "Options", "Show Thermometer", pref_thermometer);
+    
     for(PrefRangeval* rv=pref_rangevals; rv < pref_rangevals+G_N_ELEMENTS(pref_rangevals); rv++)
         g_key_file_set_integer(pref_file, "Options", rv->description, *rv->value);
     for(PrefString* s=pref_strings; s < pref_strings+G_N_ELEMENTS(pref_strings); s++)
@@ -215,6 +230,9 @@ void pref_save()
     // Save temperature sensor preference
     if (pref_temp_sensor && pref_temp_sensor[0]) {
         g_key_file_set_string(pref_file, "Options", "Temperature sensor", pref_temp_sensor);
+    } else {
+        // Clear the temperature sensor setting if not set
+        g_key_file_remove_key(pref_file, "Options", "Temperature sensor", NULL);
     }
 
     gchar* data = g_key_file_to_data(pref_file, NULL, NULL);
@@ -234,7 +252,6 @@ void pref_response(GtkDialog *dialog, gint response_id, gpointer user_data)
 
 void pref_destroyed() { 
     pref_dialog = NULL; 
-    temp_sensor_combo_container = NULL;
 }
 
 void show_pref_dialog()
@@ -308,12 +325,11 @@ void show_pref_dialog()
         gtk_box_pack_start(GTK_BOX(vb), innerBox, FALSE, FALSE, 0);
     }
 
-    // Add temperature sensor dropdown
+    // Add temperature sensor dropdown (replaces "Show Thermometer" checkbox)
     {
         GtkWidget* innerBox = gtk_hbox_new(FALSE,0);
-        temp_sensor_combo_container = innerBox; // Store for enable/disable
         
-        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new("Temperature sensor:"), FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new("Temperature:"), FALSE, FALSE, 0);
         
         GtkWidget* combo = gtk_combo_box_text_new();
         
@@ -322,17 +338,28 @@ void show_pref_dialog()
         char** sensor_labels = NULL;
         char** sensor_paths = discover_temp_sensors(&sensor_count, &sensor_labels);
         
-        // Add "Auto" as first option
+        // Add "None" as first option (replaces "Show Thermometer" checkbox)
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "None");
+        
+        // Add "Auto" as second option
         gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "Auto (first available)");
-        int active_index = 0;
+        
+        int active_index = 1; // Default to "Auto"
+        
+        // Determine current selection
+        if (!pref_thermometer) {
+            active_index = 0; // "None"
+        } else if (!pref_temp_sensor || !pref_temp_sensor[0]) {
+            active_index = 1; // "Auto"
+        }
         
         // Add discovered sensors
         for (int i = 0; i < sensor_count; i++) {
             gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), sensor_labels[i]);
             
             // Check if this is the currently selected sensor
-            if (pref_temp_sensor && g_strcmp0(pref_temp_sensor, sensor_paths[i]) == 0) {
-                active_index = i + 1; // +1 because "Auto" is at index 0
+            if (pref_thermometer && pref_temp_sensor && g_strcmp0(pref_temp_sensor, sensor_paths[i]) == 0) {
+                active_index = i + 2; // +2 because "None" and "Auto" are at index 0 and 1
             }
             
             // Store the path as object data for retrieval later

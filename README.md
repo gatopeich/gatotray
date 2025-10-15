@@ -46,20 +46,25 @@ Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-de
 
 gatotray provides an easy-to-use preferences dialog accessible by right-clicking the tray icon and selecting "Preferences".
 
-### Temperature Sensor Selection
+### Temperature Display
 
-By default, gatotray automatically selects the first available temperature sensor it finds. However, systems often have multiple temperature sensors (CPU, GPU, SSD, etc.), and you may want to monitor a specific one.
+The "Temperature:" dropdown in the preferences dialog allows you to control temperature monitoring:
 
-To select a specific temperature sensor:
+- **None** - Disables the temperature thermometer
+- **Auto (first available)** - Automatically selects the first available temperature sensor (default)
+- **Specific sensors** - Choose from a list of detected temperature sensors (e.g., "coretemp (hwmon0 temp1)" for CPU temperature)
+
+To configure temperature monitoring:
 
 1. Right-click the gatotray icon in your system tray
 2. Click "Preferences"
-3. In the preferences dialog, find the "Temperature sensor:" dropdown
-4. Select your preferred sensor from the list, or choose "Auto (first available)" for automatic selection
+3. In the preferences dialog, find the "Temperature:" dropdown
+4. Select your preference:
+   - "None" to hide the thermometer
+   - "Auto (first available)" for automatic detection (default)
+   - A specific sensor from the list to monitor that sensor
 
-The dropdown shows all available temperature sensors with descriptive labels when possible (e.g., "coretemp (hwmon0 temp1)" for CPU temperature).
-
-gatotray searches for temperature sensors in the following locations:
+The dropdown shows all available temperature sensors with descriptive labels when possible. gatotray searches for temperature sensors in the following locations:
 - `/sys/class/hwmon/hwmonN/temp*_input` (hardware monitoring sensors)
 - `/sys/class/thermal/thermal_zoneN/temp` (thermal zones)
 - `/proc/acpi/thermal_zone/*/temperature` (ACPI thermal zones)
