@@ -178,13 +178,14 @@ char** discover_temp_sensors(int* count, char*** labels) {
             
             // Try to find the name file for hwmon sensors
             if (g_str_has_prefix(temp_sensor_paths[i].path, "/sys/class/hwmon/")) {
-                // Extract hwmon directory
-                const char* hwmon_start = strstr(temp_sensor_paths[i].path, "hwmon");
-                if (hwmon_start) {
-                    const char* slash = strchr(hwmon_start, '/');
+                // Find hwmonN directory (e.g., /sys/class/hwmon/hwmon0/)
+                const char* hwmon_dir = strstr(temp_sensor_paths[i].path, "/hwmon/hwmon");
+                if (hwmon_dir) {
+                    hwmon_dir += 7; // Skip "/hwmon/" to get to "hwmonN"
+                    const char* slash = strchr(hwmon_dir, '/');
                     if (slash) {
-                        int hwmon_len = slash - hwmon_start;
-                        snprintf(name_path, sizeof(name_path), "/sys/class/hwmon/%.*s/name", hwmon_len, hwmon_start);
+                        int hwmon_len = slash - hwmon_dir;
+                        snprintf(name_path, sizeof(name_path), "/sys/class/hwmon/%.*s/name", hwmon_len, hwmon_dir);
                         FILE* name_file = fopen(name_path, "r");
                         if (name_file) {
                             if (fgets(sensor_name, sizeof(sensor_name), name_file)) {
