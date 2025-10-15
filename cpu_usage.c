@@ -10,6 +10,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <error.h>
 #include <errno.h>
 
@@ -124,6 +125,102 @@ cpu_freq(void)
     return 0;
 }
 
+// Temperature sensor paths to try
+typedef struct {
+    const char* path;
+    const char* label;
+} TempSensorPath;
+
+static TempSensorPath temp_sensor_paths[] = {
+    {"/sys/class/hwmon/hwmon0/device/temp1_input", "hwmon0 temp1"},
+    {"/sys/class/hwmon/hwmon1/device/temp1_input", "hwmon1 temp1"},
+    {"/sys/class/hwmon/hwmon2/device/temp1_input", "hwmon2 temp1"},
+    {"/sys/class/hwmon/hwmon0/temp1_input", "hwmon0 temp1 (new)"},
+    {"/sys/class/hwmon/hwmon1/temp1_input", "hwmon1 temp1 (new)"},
+    {"/sys/class/hwmon/hwmon2/temp1_input", "hwmon2 temp1 (new)"},
+    {"/sys/class/hwmon/hwmon0/device/temp2_input", "hwmon0 temp2"},
+    {"/sys/class/hwmon/hwmon1/device/temp2_input", "hwmon1 temp2"},
+    {"/sys/class/hwmon/hwmon2/device/temp2_input", "hwmon2 temp2"},
+    {"/sys/class/hwmon/hwmon0/temp2_input", "hwmon0 temp2 (new)"},
+    {"/sys/class/hwmon/hwmon1/temp2_input", "hwmon1 temp2 (new)"},
+    {"/sys/class/hwmon/hwmon2/temp2_input", "hwmon2 temp2 (new)"},
+    {"/sys/class/thermal/thermal_zone0/temp", "thermal_zone0"},
+    {"/sys/class/thermal/thermal_zone1/temp", "thermal_zone1"},
+    {"/sys/class/thermal/thermal_zone2/temp", "thermal_zone2"},
+    {"/proc/acpi/thermal_zone/THM/temperature", "ACPI THM"},
+    {"/proc/acpi/thermal_zone/THM0/temperature", "ACPI THM0"},
+    {"/proc/acpi/thermal_zone/THRM/temperature", "ACPI THRM"},
+};
+
+// Discover available temperature sensors
+// Returns a newly allocated array of available sensor paths (caller must free)
+// Sets count to the number of available sensors
+char** discover_temp_sensors(int* count, char*** labels) {
+    *count = 0;
+    int capacity = 10;
+    char** paths = g_malloc(capacity * sizeof(char*));
+    char** label_list = g_malloc(capacity * sizeof(char*));
+    
+    for (int i = 0; i < G_N_ELEMENTS(temp_sensor_paths); i++) {
+        FILE* f = fopen(temp_sensor_paths[i].path, "r");
+        if (f) {
+            fclose(f);
+            
+            if (*count >= capacity) {
+                capacity *= 2;
+                paths = g_realloc(paths, capacity * sizeof(char*));
+                label_list = g_realloc(label_list, capacity * sizeof(char*));
+            }
+            
+            // Try to read the sensor name from the name file
+            char name_path[512];
+            char sensor_name[256] = {0};
+            
+            // Try to find the name file for hwmon sensors
+            if (g_str_has_prefix(temp_sensor_paths[i].path, "/sys/class/hwmon/")) {
+                // Extract hwmon directory
+                const char* hwmon_start = strstr(temp_sensor_paths[i].path, "hwmon");
+                if (hwmon_start) {
+                    const char* slash = strchr(hwmon_start, '/');
+                    if (slash) {
+                        int hwmon_len = slash - hwmon_start;
+                        snprintf(name_path, sizeof(name_path), "/sys/class/hwmon/%.*s/name", hwmon_len, hwmon_start);
+                        FILE* name_file = fopen(name_path, "r");
+                        if (name_file) {
+                            if (fgets(sensor_name, sizeof(sensor_name), name_file)) {
+                                // Remove trailing newline
+                                sensor_name[strcspn(sensor_name, "\n")] = 0;
+                            }
+                            fclose(name_file);
+                        }
+                    }
+                }
+            }
+            
+            // Build the label
+            if (sensor_name[0]) {
+                label_list[*count] = g_strdup_printf("%s (%s)", sensor_name, temp_sensor_paths[i].label);
+            } else {
+                label_list[*count] = g_strdup(temp_sensor_paths[i].label);
+            }
+            
+            paths[*count] = g_strdup(temp_sensor_paths[i].path);
+            (*count)++;
+        }
+    }
+    
+    if (labels) *labels = label_list;
+    else {
+        for (int i = 0; i < *count; i++) g_free(label_list[i]);
+        g_free(label_list);
+    }
+    
+    return paths;
+}
+
+// Preference for selected temperature sensor path
+char* pref_temp_sensor_path = NULL;
+
 int
 cpu_temperature(void)
 {
@@ -133,21 +230,46 @@ cpu_temperature(void)
     int T = 0;
     static FILE* temperature_file = NULL;
     static const char* format = "temperature: %d C"; // ACPI format by default
+    static char* current_path = NULL;
+    
+    // Check if the preference changed
+    if (current_path != pref_temp_sensor_path) {
+        if (temperature_file) {
+            fclose(temperature_file);
+            temperature_file = NULL;
+        }
+        current_path = pref_temp_sensor_path;
+    }
+    
     if (!temperature_file) {
-        if ((temperature_file = fopen("/sys/class/hwmon/hwmon0/device/temp1_input", "r"))
-         || (temperature_file = fopen("/sys/class/hwmon/hwmon1/device/temp1_input", "r"))
-         || (temperature_file = fopen("/sys/class/hwmon/hwmon0/temp1_input", "r"))
-         || (temperature_file = fopen("/sys/class/hwmon/hwmon1/temp1_input", "r"))
-         || (temperature_file = fopen("/sys/class/thermal/thermal_zone0/temp", "r"))
-         || (temperature_file = fopen("/proc/acpi/thermal_zone/THM/temperature", "r"))
-         || (temperature_file = fopen("/proc/acpi/thermal_zone/THM0/temperature", "r"))
-         || (temperature_file = fopen("/proc/acpi/thermal_zone/THRM/temperature", "r")))
-        {
-            if (1 != fscanf(temperature_file, format, &T))
-                format = "%d"; // Fallback to simple int
-        } else {
-            unavailable = TRUE;
-            return 0;
+        if (pref_temp_sensor_path && pref_temp_sensor_path[0]) {
+            // Try to open the user-selected sensor
+            temperature_file = fopen(pref_temp_sensor_path, "r");
+            if (temperature_file) {
+                if (1 != fscanf(temperature_file, format, &T))
+                    format = "%d"; // Fallback to simple int
+            } else {
+                g_message("Failed to open selected temperature sensor: %s", pref_temp_sensor_path);
+            }
+        }
+        
+        // If no preference set or failed to open, try defaults
+        if (!temperature_file) {
+            if ((temperature_file = fopen("/sys/class/hwmon/hwmon0/device/temp1_input", "r"))
+             || (temperature_file = fopen("/sys/class/hwmon/hwmon1/device/temp1_input", "r"))
+             || (temperature_file = fopen("/sys/class/hwmon/hwmon0/temp1_input", "r"))
+             || (temperature_file = fopen("/sys/class/hwmon/hwmon1/temp1_input", "r"))
+             || (temperature_file = fopen("/sys/class/thermal/thermal_zone0/temp", "r"))
+             || (temperature_file = fopen("/proc/acpi/thermal_zone/THM/temperature", "r"))
+             || (temperature_file = fopen("/proc/acpi/thermal_zone/THM0/temperature", "r"))
+             || (temperature_file = fopen("/proc/acpi/thermal_zone/THRM/temperature", "r")))
+            {
+                if (1 != fscanf(temperature_file, format, &T))
+                    format = "%d"; // Fallback to simple int
+            } else {
+                unavailable = TRUE;
+                return 0;
+            }
         }
     }
 
