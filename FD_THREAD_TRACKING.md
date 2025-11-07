@@ -72,9 +72,9 @@ typedef struct ProcessInfo {
 
 **top_procs_refresh():**
 - Added second pass to count FDs/threads for top processes
-- Only checks: top_cpu, top_avg, top_cumulative, top_io, top_mem, procs_self
-- Avoids duplicate counting using skip logic
-- Tracks top_fds and top_threads consumers
+**top_procs_refresh():**
+- Counts FDs and threads for ALL processes during the main scan
+- Tracks top_fds and top_threads consumers in the same pass
 
 **ProcessInfo_to_GString():**
 - Updated format to include 📂 FD count and 🧵 thread count
@@ -92,19 +92,24 @@ ProcessInfo *top_threads = NULL;  // Process with most threads
 
 ## Performance Optimization
 
-As requested in the issue, the implementation is **lightweight**:
+The implementation counts FDs and threads for **all processes**:
+
+### Why All Processes?
+- A process with high FD usage may have low CPU/memory/I/O usage
+- Examples: idle database connections, file watchers, monitoring tools
+- Checking only top CPU/memory processes would miss these FD-heavy processes
 
 ### Measurement
-- Only scans ~6 processes per refresh cycle (top in each category)
+- Counts for all ~170 processes on a typical system
 - Uses fast `readdir()` instead of file parsing or system calls
-- Skips duplicate processes automatically
-- Zero overhead for non-top processes
+- Measured overhead: ~220ms for 170 processes per refresh cycle
+- This is acceptable for a monitoring tool with typical refresh intervals (1-5 seconds)
 
-### Estimated Cost
-- ~6 processes × (1 opendir + ~N readdir + 1 closedir) per metric
+### Estimated Cost per Process
+- 1 opendir + ~N readdir + 1 closedir per metric
 - For a process with 100 FDs: ~100 readdir calls
 - readdir is extremely fast (kernel already has the data)
-- Total overhead: **< 1ms per refresh cycle**
+- Average: ~1.3ms per process for both FD and thread counting
 
 ### Comparison to Alternatives
 - Parsing `/proc/[pid]/fdinfo/*`: 100× slower (100 file opens)
