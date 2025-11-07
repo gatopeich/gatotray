@@ -51,8 +51,8 @@ static unsigned count_fds(const char* pid)
 ```c
 static unsigned count_threads(const char* pid)
 ```
-- Counts threads by reading `/proc/[pid]/task`
-- Uses `readdir()` for lightweight scanning
+- Counts threads by reading the "Threads:" field from `/proc/[pid]/status`
+- Parses the status file to find thread count
 - Returns 0 on error
 
 #### Modified Structures
@@ -101,15 +101,19 @@ The implementation counts FDs and threads for **all processes**:
 
 ### Measurement
 - Counts for all ~170 processes on a typical system
-- Uses fast `readdir()` instead of file parsing or system calls
-- Measured overhead: ~220ms for 170 processes per refresh cycle
+- FDs: Uses `readdir()` on `/proc/[pid]/fd` directory
+- Threads: Reads "Threads:" field from `/proc/[pid]/status` file
+- Measured overhead: ~220ms for FDs + ~370ms for threads = ~590ms total per refresh cycle
 - This is acceptable for a monitoring tool with typical refresh intervals (1-5 seconds)
 
 ### Estimated Cost per Process
-- 1 opendir + ~N readdir + 1 closedir per metric
-- For a process with 100 FDs: ~100 readdir calls
-- readdir is extremely fast (kernel already has the data)
-- Average: ~1.3ms per process for both FD and thread counting
+- FD counting: 1 opendir + ~N readdir + 1 closedir
+  - For a process with 100 FDs: ~100 readdir calls
+  - readdir is extremely fast (kernel already has the data)
+- Thread counting: 1 fopen + ~50 line reads + 1 fclose
+  - Average /proc/[pid]/status file has ~50 lines
+  - Scanning for "Threads:" field is simple and fast
+- Average: ~3.5ms per process for both FD and thread counting
 
 ### Comparison to Alternatives
 - Parsing `/proc/[pid]/fdinfo/*`: 100× slower (100 file opens)

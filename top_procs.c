@@ -57,24 +57,26 @@ static unsigned count_fds(const char* pid)
 }
 
 // Count threads for a process
-// Returns count, or 0 on error (lightweight check using readdir)
+// Returns count, or 0 on error (reads from /proc/[pid]/status)
 static unsigned count_threads(const char* pid)
 {
     char path[64];
-    snprintf(path, sizeof(path), "/proc/%s/task", pid);
-    DIR* dir = opendir(path);
-    if (!dir)
+    snprintf(path, sizeof(path), "/proc/%s/status", pid);
+    FILE* f = fopen(path, "r");
+    if (!f)
         return 0;
     
     unsigned count = 0;
-    struct dirent* entry;
-    while ((entry = readdir(dir))) {
-        // Skip "." and ".." entries
-        if (entry->d_name[0] != '.')
-            count++;
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        // Look for "Threads:" field
+        if (sscanf(line, "Threads: %u", &count) == 1) {
+            fclose(f);
+            return count;
+        }
     }
-    closedir(dir);
-    return count;
+    fclose(f);
+    return 0;
 }
 
 
