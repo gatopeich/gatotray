@@ -307,12 +307,22 @@ void top_procs_refresh(void)
     top_fds = NULL;
     top_threads = NULL;
     
+    // Reset FD and thread counts for all processes first
+    for (ProcessInfo* proc = top_procs; proc; proc = proc->next) {
+        proc->fd_count = 0;
+        proc->thread_count = 0;
+    }
+    
     // Create a set of unique processes to check (top consumers in each category)
     ProcessInfo* to_check[] = {top_cpu, top_avg, top_cumulative, top_io, top_mem, procs_self, NULL};
     
     for (int i = 0; to_check[i]; i++) {
         ProcessInfo* proc = to_check[i];
         if (!proc)
+            continue;
+        
+        // Skip if already counted (avoid duplicates)
+        if (proc->fd_count > 0 || proc->thread_count > 0)
             continue;
             
         // Count FDs and threads for this process
