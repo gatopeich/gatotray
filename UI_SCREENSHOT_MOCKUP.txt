@@ -1,0 +1,96 @@
+# UI Screenshot Alternative - Text Mockup
+
+Since we cannot run the GUI in this environment, here's a text-based mockup showing the new temperature dropdown in the preferences dialog:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ gatotray Settings                               ┌───┐ ┌───┐     │
+│                                                 │ X │ │ + │     │
+│  ┌─────────┐  ┌───────────────────────────────┐└───┘ └───┘     │
+│  │ Colors  │  │ Options                       │                │
+│  │         │  │                               │                │
+│  │ Free    │  │ ☑ Transparent background      │                │
+│  │ memory  │  │                               │                │
+│  │ [Teal]  │  │                               │                │
+│  │         │  │ Basic refresh interval   [1000]  ms           │
+│  │ Fore-   │  │ Top refresh interval     [3000]  ms           │
+│  │ ground  │  │ High temperature alarm   [85]    °C           │
+│  │ [Black] │  │                               │                │
+│  │         │  │ Custom command:               │                │
+│  │ ...     │  │ [xterm -geometry 75x13{position} -e top]     │
+│  │         │  │                               │                │
+│  │         │  │ Temperature: [Auto (first available) ▼]       │
+│  │         │  │               ↑                │                │
+│  │         │  │               └─ NEW MERGED CONTROL           │
+│  └─────────┘  └───────────────────────────────┘                │
+│                                                                 │
+│                                      [Close]  [Save]            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Key Changes from Previous Version:
+
+### BEFORE (Two separate controls):
+```
+Options:
+☑ Show Thermometer             ← Checkbox control
+Temperature sensor: [Auto ▼]   ← Dropdown control
+```
+
+### AFTER (Single merged control):
+```
+Options:
+☐ Transparent background        ← Only remaining checkbox
+Temperature: [Auto ▼]           ← Single dropdown with "None" option
+```
+
+## Dropdown Options:
+
+When the "Temperature:" dropdown is clicked, it shows:
+
+```
+┌─────────────────────────────────────┐
+│ None                                │ ← NEW: Replaces unchecking "Show Thermometer"
+├─────────────────────────────────────┤
+│ Auto (first available)              │ ← Default selection
+├─────────────────────────────────────┤
+│ coretemp (hwmon0 temp1 (new))      │ ← CPU sensor
+├─────────────────────────────────────┤
+│ nvme (hwmon1 temp1 (new))          │ ← SSD sensor
+├─────────────────────────────────────┤
+│ thermal_zone0                       │ ← Generic thermal zone
+└─────────────────────────────────────┘
+```
+
+## Behavior:
+
+1. **Selecting "None":**
+   - Hides the thermometer completely
+   - Disables the "High temperature alarm" setting (grayed out)
+   - Equivalent to unchecking "Show Thermometer" in the old version
+
+2. **Selecting "Auto (first available)":**
+   - Enables thermometer with automatic sensor detection
+   - Uses the first available sensor found (original behavior)
+   - Enables the "High temperature alarm" setting
+
+3. **Selecting a specific sensor:**
+   - Enables thermometer with the chosen sensor
+   - Monitors only that specific sensor
+   - Enables the "High temperature alarm" setting
+
+## Benefits of Merged Control:
+
+✅ **Simpler UI** - One control instead of two
+✅ **More intuitive** - Temperature options all in one place
+✅ **Cleaner layout** - Fewer checkboxes in the options list
+✅ **Better workflow** - Users select what they want in a single action
+✅ **Backwards compatible** - Old configs are automatically migrated
+
+## Screenshot Note:
+
+This is a text-based representation. The actual GTK2 interface will have:
+- Native GTK2 dropdown (combo box) styling
+- System theme integration
+- Proper spacing and alignment
+- Native widgets and controls
