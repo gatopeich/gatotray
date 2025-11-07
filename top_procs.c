@@ -50,7 +50,7 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     float gb = p->rss * PAGE_GB();
     #define max2decs(g) (g>.005?g:.0)
-    g_string_append_printf(out, "%s: ⚙️  %.2g%%cpu %.2g%%avg ⏳ %.2g%%io 💾 %.2ggb (%d)"
+    g_string_append_printf(out, "%s: ⚙️  %.2g%%cpu %.2g%%avg ⏳  %.2g%%io 💾  %.2ggb (%d)"
         , p->comm, max2decs(p->cpu), max2decs(p->average_cpu), p->io_wait, gb, p->pid);
     g_warn_if_fail(p->pid>0);
 }
