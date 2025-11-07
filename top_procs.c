@@ -216,10 +216,10 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     // printf("14:17 %llu %llu %llu %llu 24:%llu ~ %s\n", utime, stime, cutime, cstime, rss, buf);
     read_field(42, delayacct_blkio_ticks); pi.io_time = delayacct_blkio_ticks;
 
-    // Initialize FD and thread counts to 0
-    // They will be counted selectively for top processes to minimize overhead
-    pi.fd_count = 0;
-    pi.thread_count = 0;
+    // Count FDs and threads for all processes
+    // This is lightweight (readdir) so we can do it for all processes
+    pi.fd_count = count_fds(pid);
+    pi.thread_count = count_threads(pid);
 
     pi.sample_time = cpu_total_ticks;
     return pi;
@@ -299,44 +299,13 @@ void top_procs_refresh(void)
         // which is often long-running processes like systemd, regardless of current usage
         if (!top_cumulative || proc.cpu_time > top_cumulative->cpu_time)
             top_cumulative = p;
-
-        p = *(it = &(p->next));
-    }
-
-    // Second pass: Count FDs and threads for top processes
-    // To minimize overhead, only check the top consumers in each category
-    // and track which processes have the highest FD/thread counts
-    top_fds = NULL;
-    top_threads = NULL;
-    
-    // Reset FD and thread counts for all processes first
-    for (ProcessInfo* proc = top_procs; proc; proc = proc->next) {
-        proc->fd_count = 0;
-        proc->thread_count = 0;
-    }
-    
-    // Create a set of unique processes to check (top consumers in each category)
-    ProcessInfo* to_check[] = {top_cpu, top_avg, top_cumulative, top_io, top_mem, procs_self, NULL};
-    
-    for (int i = 0; to_check[i]; i++) {
-        ProcessInfo* proc = to_check[i];
-        if (!proc)
-            continue;
-        
-        // Skip if already counted (avoid duplicates)
-        if (proc->fd_count > 0 || proc->thread_count > 0)
-            continue;
-            
-        // Count FDs and threads for this process
-        char pid_str[32];
-        snprintf(pid_str, sizeof(pid_str), "%u", proc->pid);
-        proc->fd_count = count_fds(pid_str);
-        proc->thread_count = count_threads(pid_str);
         
         // Track top FD and thread consumers
-        if (!top_fds || proc->fd_count > top_fds->fd_count)
-            top_fds = proc;
-        if (!top_threads || proc->thread_count > top_threads->thread_count)
-            top_threads = proc;
+        if (!top_fds || proc.fd_count > top_fds->fd_count)
+            top_fds = p;
+        if (!top_threads || proc.thread_count > top_threads->thread_count)
+            top_threads = p;
+
+        p = *(it = &(p->next));
     }
 }
