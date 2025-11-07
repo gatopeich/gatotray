@@ -43,6 +43,12 @@ typedef struct ProcessInfo {
 } ProcessInfo;
 
 int procs_total=0, procs_active=0;
+// Track top resource consumers:
+// - top_cpu: highest current CPU usage (%)
+// - top_avg: highest average CPU usage since process start (%)
+// - top_cumulative: highest absolute CPU time consumed (ticks) - often long-running system processes
+// - top_io: highest I/O wait time
+// - top_mem: highest memory usage
 ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
     , *top_cumulative=NULL, *procs_self=NULL;
 
@@ -207,6 +213,8 @@ void top_procs_refresh(void)
             top_cpu = p;
         if (!top_io || proc.io_wait > top_io->io_wait)
             top_io = p;
+        // Track process with highest absolute cumulative CPU time (total ticks),
+        // which is often long-running processes like systemd, regardless of current usage
         if (!top_cumulative || proc.cpu_time > top_cumulative->cpu_time)
             top_cumulative = p;
 
