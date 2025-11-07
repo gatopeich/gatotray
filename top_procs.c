@@ -57,9 +57,9 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
     float gb = p->rss * PAGE_GB();
     #define max2decs(g) (g>.005?g:.0)
     // Dynamic CPU icon based on usage
-    const char* cpu_icon = max2decs(p->cpu) > 20 ? "📈" : "📉";
+    const char* cpu_icon = max2decs(p->cpu) > CPU_HIGH_THRESHOLD ? "📈" : "📉";
     // Dynamic I/O icon based on wait percentage
-    const char* io_icon = p->io_wait < 1 ? "⏱️" : "⏳";
+    const char* io_icon = p->io_wait < IO_WAIT_THRESHOLD ? "⏱️" : "⏳";
     
     g_string_append_printf(out, "%s: %s  %.2g%%cpu %.2g%%avg %s  %.2g%%io 💾  %.2ggb (%d)"
         , p->comm, cpu_icon, max2decs(p->cpu), max2decs(p->average_cpu), io_icon, p->io_wait, gb, p->pid);
