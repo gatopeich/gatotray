@@ -63,7 +63,7 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
     // Dynamic I/O icon based on wait percentage
     const char* io_icon = p->io_wait < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
     
-    g_string_append_printf(out, "%s: %s  %.2g%%cpu %.2g%%avg %s  %.2g%%io 💾  %.2ggb (%d)"
+    g_string_append_printf(out, "%s: %s%.2g%%cpu %.2g%%avg %s%.2g%%io 💾%.2ggb (%d)"
         , p->comm, cpu_icon, max2decs(p->cpu), max2decs(p->average_cpu), io_icon, p->io_wait, gb, p->pid);
     g_warn_if_fail(p->pid>0);
 }
@@ -76,7 +76,7 @@ void ProcessInfo_to_GString_with_category(ProcessInfo* p, GString* out, const ch
     // Dynamic I/O icon based on wait percentage
     const char* io_icon = p->io_wait < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
     
-    g_string_append_printf(out, "%s %s: %s  %.2g%%cpu %.2g%%avg %s  %.2g%%io 💾  %.2ggb (%d)"
+    g_string_append_printf(out, "%s %s: %s%.2g%%cpu %.2g%%avg %s%.2g%%io 💾%.2ggb (%d)"
         , category_icon, p->comm, cpu_icon, max2decs(p->cpu), max2decs(p->average_cpu), io_icon, p->io_wait, gb, p->pid);
     g_warn_if_fail(p->pid>0);
 }
