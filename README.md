@@ -30,8 +30,9 @@ Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-de
 * Designed to run continuously in small screen space to provide good idea of the
   CPU's status in a glimpse.
 
-* Can run as a `xscreensaver` plugin, so you can see your CPUs at work from a
-  prudential distance.
+* Can run as a screensaver on modern desktop environments (MATE, XFCE4) as well 
+  as legacy xscreensaver, so you can see your CPUs at work from a prudential 
+  distance. Simply right-click the tray icon and select "Install screensaver".
 
 * Works in almost any Linux desktop, as long as it is Freedesktop compatible:
   XFCE, GNOME, GTK+, KDE, and more.
@@ -52,6 +53,24 @@ Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-de
 ## Configuration ##
 
 gatotray provides an easy-to-use preferences dialog accessible by right-clicking the tray icon and selecting "Preferences".
+
+### Screensaver Installation
+
+To use gatotray as your screensaver:
+
+1. Right-click the gatotray icon in your system tray
+2. Click "Install screensaver"
+3. Authenticate when prompted (pkexec or sudo)
+4. The screensaver preferences dialog will open automatically
+5. Select "Gatotray CPU Monitor" from the list of screensavers
+
+**Supported Desktop Environments:**
+- **MATE** (Linux Mint MATE, Ubuntu MATE, etc.) - Uses mate-screensaver
+- **XFCE4** (Xubuntu, Linux Mint XFCE, etc.) - Uses xfce4-screensaver
+- **Others** - Falls back to legacy xscreensaver if installed
+
+The screensaver shows a beautiful full-screen visualization of your CPU usage, 
+temperature, and memory consumption with historical graphs.
 
 ### Temperature Display
 
