@@ -44,7 +44,7 @@ typedef struct ProcessInfo {
 
 int procs_total=0, procs_active=0;
 ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
-    , *procs_self=NULL;
+    , *top_cumulative=NULL, *procs_self=NULL;
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
@@ -64,11 +64,15 @@ void top_procs_append_summary(GString* summary)
         g_string_append(summary, "\n· ");
         ProcessInfo_to_GString(top_avg, summary);
     }
-    if (top_io != top_avg && top_io != top_cpu) {
+    if (top_cumulative != top_avg && top_cumulative != top_cpu) {
+        g_string_append(summary, "\n· ");
+        ProcessInfo_to_GString(top_cumulative, summary);
+    }
+    if (top_io != top_cumulative && top_io != top_avg && top_io != top_cpu) {
         g_string_append(summary, "\n· ");
         ProcessInfo_to_GString(top_io, summary);
     }
-    if (top_mem != top_io && top_mem != top_avg && top_mem != top_cpu) {
+    if (top_mem != top_io && top_mem != top_cumulative && top_mem != top_avg && top_mem != top_cpu) {
         g_string_append(summary, "\n· ");
         ProcessInfo_to_GString(top_mem, summary);
     }
@@ -199,6 +203,8 @@ void top_procs_refresh(void)
             top_cpu = p;
         if (!top_io || proc.io_wait > top_io->io_wait)
             top_io = p;
+        if (!top_cumulative || proc.cpu_time > top_cumulative->cpu_time)
+            top_cumulative = p;
 
         p = *(it = &(p->next));
     }
