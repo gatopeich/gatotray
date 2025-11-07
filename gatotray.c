@@ -127,8 +127,8 @@ void history_load(void)
     }
     
     int saved_size = 0;
-    if (fread(&saved_size, sizeof(int), 1, f) != 1 || saved_size <= 0) {
-        g_warning("Invalid history cache file format");
+    if (fread(&saved_size, sizeof(int), 1, f) != 1 || saved_size <= 0 || saved_size > 10000) {
+        g_warning("Invalid history cache file format (size: %d)", saved_size);
         fclose(f);
         g_free(path);
         return;
