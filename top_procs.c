@@ -43,37 +43,71 @@ typedef struct ProcessInfo {
 } ProcessInfo;
 
 int procs_total=0, procs_active=0;
+// Track top resource consumers:
+// - top_cpu: highest current CPU usage (%)
+// - top_avg: highest average CPU usage since process start (%)
+// - top_cumulative: highest absolute CPU time consumed (ticks) - often long-running system processes
+// - top_io: highest I/O wait time
+// - top_mem: highest memory usage
 ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
-    , *procs_self=NULL;
+    , *top_cumulative=NULL, *procs_self=NULL;
+
+// Helper macro to format small values as 0 for cleaner display
+#define max2decs(g) (g>.005?g:.0)
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     float gb = p->rss * PAGE_GB();
-    #define max2decs(g) (g>.005?g:.0)
-    g_string_append_printf(out, "%s: %.2g%%cpu %.2g%%avg %.2g%%io %.2ggb (%d)"
-        , p->comm, max2decs(p->cpu), max2decs(p->average_cpu), p->io_wait, gb, p->pid);
+    // Dynamic CPU icon based on usage (using raw value for accurate threshold comparison)
+    const char* cpu_icon = p->cpu > CPU_HIGH_THRESHOLD ? "📈" : "📉";
+    // Dynamic I/O icon based on wait percentage
+    const char* io_icon = p->io_wait < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
+    
+    g_string_append_printf(out, "%s: %s%.2g%%cpu %.2g%%avg %s%.2g%%io 💾%.2ggb (%d)"
+        , p->comm, cpu_icon, max2decs(p->cpu), max2decs(p->average_cpu), io_icon, p->io_wait, gb, p->pid);
+    g_warn_if_fail(p->pid>0);
+}
+
+void ProcessInfo_to_GString_with_category(ProcessInfo* p, GString* out, const char* category_icon)
+{
+    float gb = p->rss * PAGE_GB();
+    // Dynamic CPU icon based on usage (using raw value for accurate threshold comparison)
+    const char* cpu_icon = p->cpu > CPU_HIGH_THRESHOLD ? "📈" : "📉";
+    // Dynamic I/O icon based on wait percentage
+    const char* io_icon = p->io_wait < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
+    
+    g_string_append_printf(out, "%s %s: %s%.2g%%cpu %.2g%%avg %s%.2g%%io 💾%.2ggb (%d)"
+        , category_icon, p->comm, cpu_icon, max2decs(p->cpu), max2decs(p->average_cpu), io_icon, p->io_wait, gb, p->pid);
     g_warn_if_fail(p->pid>0);
 }
 
 void top_procs_append_summary(GString* summary)
 {
-    g_string_append_printf(summary, "\n%d processes, %d active", procs_total, procs_active);
-    g_string_append(summary, "\n\nTop consumers:\n· ");
-    ProcessInfo_to_GString(top_cpu, summary);
-    if (top_avg != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_avg, summary);
+    g_string_append_printf(summary, "\n📊  %d processes, %d active", procs_total, procs_active);
+    if (top_cpu) {
+        g_string_append(summary, "\n\n📊  Top consumers:\n");
+        ProcessInfo_to_GString_with_category(top_cpu, summary, "🔥");
+        if (top_avg && top_avg != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_avg, summary, "🔥");
+        }
+        if (top_cumulative && top_cumulative != top_avg && top_cumulative != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_cumulative, summary, "🔥");
+        }
+        if (top_io && top_io != top_cumulative && top_io != top_avg && top_io != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_io, summary, "🔁");
+        }
+        if (top_mem && top_mem != top_io && top_mem != top_cumulative && top_mem != top_avg && top_mem != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_mem, summary, "🧠");
+        }
     }
-    if (top_io != top_avg && top_io != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_io, summary);
+    if (procs_self) {
+        g_string_append(summary, "\n\n");
+        ProcessInfo_to_GString(procs_self, summary);
     }
-    if (top_mem != top_io && top_mem != top_avg && top_mem != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_mem, summary);
-    }
-    g_string_append(summary, "\n\n");
-    ProcessInfo_to_GString(procs_self, summary);
 }
 
 ProcessInfo ProcessInfo_scan(const char* pid)
@@ -199,6 +233,10 @@ void top_procs_refresh(void)
             top_cpu = p;
         if (!top_io || proc.io_wait > top_io->io_wait)
             top_io = p;
+        // Track process with highest absolute cumulative CPU time (total ticks),
+        // which is often long-running processes like systemd, regardless of current usage
+        if (!top_cumulative || proc.cpu_time > top_cumulative->cpu_time)
+            top_cumulative = p;
 
         p = *(it = &(p->next));
     }
