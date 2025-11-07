@@ -38,15 +38,20 @@
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
 
+#define SCALE (1<<15)
+#define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
+#define PERCENT(scaled) RESCALE(scaled,100)
+
+// Thresholds for dynamic icon selection in tooltip text
+// Note: These must be defined before including top_procs.c which uses them
+#define CPU_HIGH_THRESHOLD 20  // CPU usage % above which to show high-load icon (📈)
+#define IO_WAIT_THRESHOLD 1    // I/O wait % below which to show minimal-wait icon (🔄)
+
 // TODO: Include headers instead of full modules
 #include "cpu_usage.c"
 #include "settings.c"
 #include "top_procs.c"
 #include "gatotray.xpm"
-
-#define SCALE (1<<15)
-#define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
-#define PERCENT(scaled) RESCALE(scaled,100)
 
 typedef struct {
     CPU_Usage cpu;
@@ -323,15 +328,20 @@ timeout_cb (gpointer data)
     else
         g_string_set_size(info_text, 0);
 
-    g_string_append_printf(info_text, GATOTRAY_VERSION "\nCPU %d%% busy, %d%% on I/O-wait @ %d MHz"
-        , PERCENT(history[0].cpu.usage), PERCENT(history[0].cpu.iowait), scaling_cur_freq);
+    // Dynamic CPU icon based on usage
+    const char* cpu_icon = PERCENT(history[0].cpu.usage) > CPU_HIGH_THRESHOLD ? "📈" : "📉";
+    // Dynamic I/O icon based on wait percentage
+    const char* io_icon = PERCENT(history[0].cpu.iowait) < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
+    
+    g_string_append_printf(info_text, GATOTRAY_VERSION "\n%s  CPU %d%% busy, %s  %d%% on I/O-wait @ %d MHz"
+        , cpu_icon, PERCENT(history[0].cpu.usage), io_icon, PERCENT(history[0].cpu.iowait), scaling_cur_freq);
 
     if (meminfo.Total_MB)
-        g_string_append_printf (info_text, "\nFree RAM: %d/%d MB"
+        g_string_append_printf (info_text, "\n💾  Free RAM: %d/%d MB"
             , RESCALE(history[0].free_memory, meminfo.Total_MB), meminfo.Total_MB);
 
     if (history[0].temp)
-        g_string_append_printf (info_text, ". Temperature: %d°C\n", history[0].temp);
+        g_string_append_printf (info_text, ". 🌡️  Temperature: %d°C\n", history[0].temp);
 
     top_procs_append_summary(info_text);
 
