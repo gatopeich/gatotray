@@ -44,8 +44,9 @@ Example tooltip:
 ```c
 static unsigned count_fds(const char* pid)
 ```
-- Counts open file descriptors by reading `/proc/[pid]/fd`
-- Uses `readdir()` for lightweight scanning
+- Reads "FDSize:" field from `/proc/[pid]/status` (allocated FD table size)
+- FDSize approximates the number of open FDs well for finding top consumers
+- Parses the status file to find FDSize
 - Returns 0 on error (process disappeared, no permission, etc.)
 
 ```c
@@ -54,6 +55,8 @@ static unsigned count_threads(const char* pid)
 - Counts threads by reading the "Threads:" field from `/proc/[pid]/status`
 - Parses the status file to find thread count
 - Returns 0 on error
+
+**Note**: Both metrics now read from the same file (`/proc/[pid]/status`), which provides consistency and potential for future optimization.
 
 #### Modified Structures
 
@@ -101,19 +104,24 @@ The implementation counts FDs and threads for **all processes**:
 
 ### Measurement
 - Counts for all ~170 processes on a typical system
-- FDs: Uses `readdir()` on `/proc/[pid]/fd` directory
-- Threads: Reads "Threads:" field from `/proc/[pid]/status` file
-- Measured overhead: ~220ms for FDs + ~370ms for threads = ~590ms total per refresh cycle
+- Both FDs and threads read from `/proc/[pid]/status` file
+  - FDs: Reads "FDSize:" field (allocated FD table size, approximates actual count)
+  - Threads: Reads "Threads:" field
+- Measured overhead: ~388ms for FDs + ~370ms for threads = ~758ms total per refresh cycle
 - This is acceptable for a monitoring tool with typical refresh intervals (1-5 seconds)
 
 ### Estimated Cost per Process
-- FD counting: 1 opendir + ~N readdir + 1 closedir
-  - For a process with 100 FDs: ~100 readdir calls
-  - readdir is extremely fast (kernel already has the data)
-- Thread counting: 1 fopen + ~50 line reads + 1 fclose
+- Both metrics read from `/proc/[pid]/status`: 2 × (1 fopen + ~50 line scans + 1 fclose)
   - Average /proc/[pid]/status file has ~50 lines
-  - Scanning for "Threads:" field is simple and fast
-- Average: ~3.5ms per process for both FD and thread counting
+  - Scanning for "FDSize:" and "Threads:" fields is simple and fast
+- Average: ~4.5ms per process for both FD and thread counting
+- Future optimization possible: read file once for both metrics
+
+### Why FDSize Instead of Actual Count?
+- FDSize is the allocated file descriptor table size
+- Not exact count, but closely approximates it for finding top consumers
+- Much simpler than scanning `/proc/[pid]/fd` directory
+- Consistent with thread counting (both from same file)
 
 ### Comparison to Alternatives
 - Parsing `/proc/[pid]/fdinfo/*`: 100× slower (100 file opens)
