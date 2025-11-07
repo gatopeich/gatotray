@@ -50,15 +50,15 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     float gb = p->rss * PAGE_GB();
     #define max2decs(g) (g>.005?g:.0)
-    g_string_append_printf(out, "%s: ⚙️ %.2g%%cpu %.2g%%avg ⏳ %.2g%%io 💾 %.2ggb (%d)"
+    g_string_append_printf(out, "%s: ⚙️  %.2g%%cpu %.2g%%avg ⏳ %.2g%%io 💾 %.2ggb (%d)"
         , p->comm, max2decs(p->cpu), max2decs(p->average_cpu), p->io_wait, gb, p->pid);
     g_warn_if_fail(p->pid>0);
 }
 
 void top_procs_append_summary(GString* summary)
 {
-    g_string_append_printf(summary, "\n⚡ %d processes, %d active", procs_total, procs_active);
-    g_string_append(summary, "\n\n⭐ Top consumers:\n· ");
+    g_string_append_printf(summary, "\n⚡  %d processes, %d active", procs_total, procs_active);
+    g_string_append(summary, "\n\n⭐  Top consumers:\n· ");
     ProcessInfo_to_GString(top_cpu, summary);
     if (top_avg != top_cpu) {
         g_string_append(summary, "\n· ");
