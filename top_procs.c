@@ -2,6 +2,8 @@
 // Goals:
 // - Track top memory consumers
 // - Track top CPU consumers
+// - Track top file descriptor consumers (modern IDEs)
+// - Track top thread consumers (multi-threaded apps)
 // - Identify processes starving the system
 // - Do OOM kill before it is too late?
 
