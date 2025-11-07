@@ -38,15 +38,19 @@
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
 
+#define SCALE (1<<15)
+#define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
+#define PERCENT(scaled) RESCALE(scaled,100)
+
+// Thresholds for dynamic icon selection
+#define CPU_HIGH_THRESHOLD 20  // CPU usage % above which to show high-load icon (📈)
+#define IO_WAIT_THRESHOLD 1    // I/O wait % below which to show minimal-wait icon (⏱️)
+
 // TODO: Include headers instead of full modules
 #include "cpu_usage.c"
 #include "settings.c"
 #include "top_procs.c"
 #include "gatotray.xpm"
-
-#define SCALE (1<<15)
-#define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
-#define PERCENT(scaled) RESCALE(scaled,100)
 
 typedef struct {
     CPU_Usage cpu;
@@ -324,9 +328,9 @@ timeout_cb (gpointer data)
         g_string_set_size(info_text, 0);
 
     // Dynamic CPU icon based on usage
-    const char* cpu_icon = PERCENT(history[0].cpu.usage) > 20 ? "📈" : "📉";
+    const char* cpu_icon = PERCENT(history[0].cpu.usage) > CPU_HIGH_THRESHOLD ? "📈" : "📉";
     // Dynamic I/O icon based on wait percentage
-    const char* io_icon = PERCENT(history[0].cpu.iowait) < 1 ? "⏱️" : "⏳";
+    const char* io_icon = PERCENT(history[0].cpu.iowait) < IO_WAIT_THRESHOLD ? "⏱️" : "⏳";
     
     g_string_append_printf(info_text, GATOTRAY_VERSION "\n%s  CPU %d%% busy, %s  %d%% on I/O-wait @ %d MHz"
         , cpu_icon, PERCENT(history[0].cpu.usage), io_icon, PERCENT(history[0].cpu.iowait), scaling_cur_freq);
