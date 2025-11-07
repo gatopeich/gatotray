@@ -323,7 +323,7 @@ timeout_cb (gpointer data)
     else
         g_string_set_size(info_text, 0);
 
-    g_string_append_printf(info_text, GATOTRAY_VERSION "\n🖥️  CPU %d%% busy, ⏳ %d%% on I/O-wait @ %d MHz"
+    g_string_append_printf(info_text, GATOTRAY_VERSION "\n🖥️  CPU %d%% busy, ⏳  %d%% on I/O-wait @ %d MHz"
         , PERCENT(history[0].cpu.usage), PERCENT(history[0].cpu.iowait), scaling_cur_freq);
 
     if (meminfo.Total_MB)
