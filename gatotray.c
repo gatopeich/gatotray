@@ -323,8 +323,13 @@ timeout_cb (gpointer data)
     else
         g_string_set_size(info_text, 0);
 
-    g_string_append_printf(info_text, GATOTRAY_VERSION "\n🖥️  CPU %d%% busy, ⏳  %d%% on I/O-wait @ %d MHz"
-        , PERCENT(history[0].cpu.usage), PERCENT(history[0].cpu.iowait), scaling_cur_freq);
+    // Dynamic CPU icon based on usage
+    const char* cpu_icon = PERCENT(history[0].cpu.usage) > 20 ? "📈" : "📉";
+    // Dynamic I/O icon based on wait percentage
+    const char* io_icon = PERCENT(history[0].cpu.iowait) < 1 ? "⏱️" : "⏳";
+    
+    g_string_append_printf(info_text, GATOTRAY_VERSION "\n%s  CPU %d%% busy, %s  %d%% on I/O-wait @ %d MHz"
+        , cpu_icon, PERCENT(history[0].cpu.usage), io_icon, PERCENT(history[0].cpu.iowait), scaling_cur_freq);
 
     if (meminfo.Total_MB)
         g_string_append_printf (info_text, "\n💾  Free RAM: %d/%d MB"
