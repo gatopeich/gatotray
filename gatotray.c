@@ -34,6 +34,8 @@
 #define _XOPEN_SOURCE
 #include <sys/types.h>
 #include <signal.h>
+#include <string.h>
+#include <errno.h>
 
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
@@ -85,6 +87,94 @@ GdkPoint Termometer[] = {{2,16},{2,2},{3,1},{4,1},{5,2},{5,16},{6,17},{6,19},{5,
 #define Termometer_scale 21
 GdkPoint termometer_tube[Termometer_tube_points];
 GdkPoint termometer[G_N_ELEMENTS(Termometer)];
+
+// History cache functions
+static const gchar* history_cache_filename = "gatotray-history";
+
+void history_save(void)
+{
+    if (!history || hist_size == 0)
+        return;
+    
+    gchar* cache_dir = g_build_filename(g_get_user_cache_dir(), NULL);
+    g_mkdir_with_parents(cache_dir, 0700);
+    gchar* path = g_build_filename(cache_dir, history_cache_filename, NULL);
+    g_free(cache_dir);
+    
+    FILE* f = fopen(path, "wb");
+    if (f) {
+        // Write the number of history entries
+        fwrite(&hist_size, sizeof(int), 1, f);
+        // Write the history data
+        fwrite(history, sizeof(CPUstatus), hist_size, f);
+        fclose(f);
+        g_debug("Saved %d history entries to %s", hist_size, path);
+    } else {
+        g_warning("Failed to save history to %s: %s", path, g_strerror(errno));
+    }
+    g_free(path);
+}
+
+void history_load(void)
+{
+    gchar* path = g_build_filename(g_get_user_cache_dir(), history_cache_filename, NULL);
+    
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        g_debug("No history cache file found at %s", path);
+        g_free(path);
+        return;
+    }
+    
+    int saved_size = 0;
+    if (fread(&saved_size, sizeof(int), 1, f) != 1 || saved_size <= 0) {
+        g_warning("Invalid history cache file format");
+        fclose(f);
+        g_free(path);
+        return;
+    }
+    
+    // Allocate temporary buffer for saved history
+    CPUstatus* saved_history = g_malloc(saved_size * sizeof(CPUstatus));
+    size_t items_read = fread(saved_history, sizeof(CPUstatus), saved_size, f);
+    fclose(f);
+    
+    if (items_read != saved_size) {
+        g_warning("Failed to read complete history from cache (expected %d, got %zu)", 
+                  saved_size, items_read);
+        g_free(saved_history);
+        g_free(path);
+        return;
+    }
+    
+    g_message("Loaded %d history entries from %s", saved_size, path);
+    g_free(path);
+    
+    // If current history is smaller than saved, expand it
+    if (hist_size < saved_size) {
+        history = g_realloc(history, saved_size * sizeof(CPUstatus));
+        hist_size = saved_size;
+        if (width < hist_size)
+            width = hist_size;
+    }
+    
+    // Copy saved history to current history
+    // If saved history is shorter than current size, repeat oldest point to fill
+    if (saved_size >= hist_size) {
+        // Saved history is same size or larger - just copy what we need
+        memcpy(history, saved_history, hist_size * sizeof(CPUstatus));
+    } else {
+        // Saved history is shorter - copy it and fill remaining with oldest point
+        memcpy(history, saved_history, saved_size * sizeof(CPUstatus));
+        CPUstatus oldest = saved_history[saved_size - 1];
+        for (int i = saved_size; i < hist_size; i++) {
+            history[i] = oldest;
+        }
+        g_debug("Filled remaining %d entries with oldest data point", hist_size - saved_size);
+    }
+    
+    g_free(saved_history);
+}
 
 void redraw(void)
 {
@@ -354,6 +444,13 @@ timeout_cb (gpointer data)
 
     redraw();
 
+    // Save history every minute (60 seconds)
+    static int save_countdown = 60000 / 1000; // 60 seconds / 1 second default interval
+    if (--save_countdown <= 0) {
+        history_save();
+        save_countdown = 60000 / refresh_interval_ms; // Reset based on current interval
+    }
+
     // Re-add every time to handle changes in refresh_interval_ms
     g_timeout_add(refresh_interval_ms, timeout_cb, NULL);
     return FALSE;
@@ -438,6 +535,9 @@ main( int argc, char *argv[] )
     history = g_malloc(sizeof(*history));
     hist_size = width = 1;
     update_history();
+    
+    // Load cached history from previous run
+    history_load();
 
     gchar** envp = g_get_environ();
     const gchar* wid = g_environ_getenv(envp,"XSCREENSAVER_WINDOW");
