@@ -386,10 +386,10 @@ install_screensaver()
     // Detect which screensaver system is in use
     const gchar* desktop = g_getenv("XDG_CURRENT_DESKTOP");
     const gchar* session = g_getenv("DESKTOP_SESSION");
-    gboolean is_mate = (desktop && g_strstr_len(desktop, -1, "MATE")) ||
+    gboolean is_mate = (desktop && (g_strstr_len(desktop, -1, "MATE") || g_strstr_len(desktop, -1, "mate"))) ||
                        (session && g_strstr_len(session, -1, "mate"));
-    gboolean is_xfce = (desktop && g_strstr_len(desktop, -1, "XFCE")) ||
-                       (session && g_strstr_len(session, -1, "xfce"));
+    gboolean is_xfce = (desktop && (g_strstr_len(desktop, -1, "XFCE") || g_strstr_len(desktop, -1, "xfce"))) ||
+                       (session && (g_strstr_len(session, -1, "xfce") || g_strstr_len(session, -1, "xfce4")));
     
     // Modern screensaver systems (MATE/XFCE4) use .desktop files
     if (is_mate || is_xfce) {
