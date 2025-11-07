@@ -97,7 +97,7 @@ void top_procs_append_summary(GString* summary)
         }
         if (top_io && top_io != top_cumulative && top_io != top_avg && top_io != top_cpu) {
             g_string_append(summary, "\n");
-            ProcessInfo_to_GString_with_category(top_io, summary, "⏳");
+            ProcessInfo_to_GString_with_category(top_io, summary, "🔁");
         }
         if (top_mem && top_mem != top_io && top_mem != top_cumulative && top_mem != top_avg && top_mem != top_cpu) {
             g_string_append(summary, "\n");
