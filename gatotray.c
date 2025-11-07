@@ -41,6 +41,8 @@
 
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
+#include <gdk/gdkx.h>
+#include <X11/Xlib.h>
 
 #define SCALE (1<<15)
 #define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
@@ -550,9 +552,29 @@ main( int argc, char *argv[] )
     const gchar* wid = g_environ_getenv(envp,"XSCREENSAVER_WINDOW");
     if (wid || g_str_has_suffix(argv[0], "xgatotray")
             || (argc>1 && g_str_has_prefix(argv[1], "-root"))) {
-        if (wid)
-            screensaver = gdk_window_foreign_new(g_ascii_strtoull(wid, NULL, 16));
-        else {
+        if (wid) {
+            // Use X11 directly to access the screensaver window
+            // gdk_window_foreign_new() is deprecated and often returns NULL in GTK3+
+            Display *display = GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
+            Window xwindow = g_ascii_strtoull(wid, NULL, 16);
+            
+            // Verify the window exists
+            XWindowAttributes attrs;
+            if (XGetWindowAttributes(display, xwindow, &attrs)) {
+                screensaver = gdk_x11_window_foreign_new_for_display(
+                    gdk_display_get_default(), xwindow);
+                
+                if (!screensaver) {
+                    g_warning("Failed to create GDK window for xscreensaver window 0x%lx, "
+                              "will create own window", xwindow);
+                }
+            } else {
+                g_warning("Xscreensaver window 0x%lx does not exist", xwindow);
+            }
+        }
+        
+        // If we couldn't get the xscreensaver window, create our own
+        if (!screensaver) {
             // screensaver = GDK_WINDOW(gdk_get_default_root_window());
             GdkWindowAttr attr = {
                 "xgatotray", 0, 0,0,400,300, GDK_INPUT_OUTPUT,NULL,NULL,GDK_WINDOW_TOPLEVEL

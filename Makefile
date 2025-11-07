@@ -18,7 +18,7 @@ VERSION := 4.1
 REL := $(shell git log -1 --format=%cd --date=format:%Y%m%d || date +%Y%m%d)
 CFLAGS := -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION).$(REL)\" $(CFLAGS) -Wno-deprecated-declarations
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
-LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
+LDLIBS := `pkg-config --libs gtk+-2.0` -lX11 $(LDLIBS)
 
 $(warn $(DESTDIR))
 
