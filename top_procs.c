@@ -52,10 +52,12 @@ int procs_total=0, procs_active=0;
 ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
     , *top_cumulative=NULL, *procs_self=NULL;
 
+// Helper macro to format small values as 0 for cleaner display
+#define max2decs(g) (g>.005?g:.0)
+
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     float gb = p->rss * PAGE_GB();
-    #define max2decs(g) (g>.005?g:.0)
     // Dynamic CPU icon based on usage (using raw value for accurate threshold comparison)
     const char* cpu_icon = p->cpu > CPU_HIGH_THRESHOLD ? "📈" : "📉";
     // Dynamic I/O icon based on wait percentage
@@ -69,7 +71,6 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 void ProcessInfo_to_GString_with_category(ProcessInfo* p, GString* out, const char* category_icon)
 {
     float gb = p->rss * PAGE_GB();
-    #define max2decs(g) (g>.005?g:.0)
     // Dynamic CPU icon based on usage (using raw value for accurate threshold comparison)
     const char* cpu_icon = p->cpu > CPU_HIGH_THRESHOLD ? "📈" : "📉";
     // Dynamic I/O icon based on wait percentage
