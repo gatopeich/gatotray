@@ -382,12 +382,71 @@ open_website()
 void
 install_screensaver()
 {
-    gchar* cmd = g_strdup_printf(
-        "sh -c \"(echo programs: %s -root;echo mode: _1;echo selected: 0) >> %s/.xscreensaver"
-        " && xscreensaver-command -demo\"", abs_argv0, g_get_home_dir());
-    g_message("%s",cmd);
-    g_spawn_command_line_async(cmd, NULL);
-    g_free(cmd);
+    // Detect which screensaver system is in use
+    const gchar* desktop = g_getenv("XDG_CURRENT_DESKTOP");
+    const gchar* session = g_getenv("DESKTOP_SESSION");
+    gboolean is_mate = (desktop && g_strstr_len(desktop, -1, "MATE")) ||
+                       (session && g_strstr_len(session, -1, "mate"));
+    gboolean is_xfce = (desktop && g_strstr_len(desktop, -1, "XFCE")) ||
+                       (session && g_strstr_len(session, -1, "xfce"));
+    
+    // Modern screensaver systems (MATE/XFCE4) use .desktop files
+    if (is_mate || is_xfce) {
+        const gchar* screensaver_dir = "/usr/share/applications/screensavers";
+        gchar* desktop_file_path = g_strdup_printf("%s/gatotray-screensaver.desktop", screensaver_dir);
+        gchar* temp_file = g_strdup_printf("/tmp/gatotray-screensaver-%d.desktop", getpid());
+        
+        // Create the .desktop file content
+        gchar* desktop_content = g_strdup_printf(
+            "[Desktop Entry]\n"
+            "Name=Gatotray CPU Monitor\n"
+            "Comment=CPU & Temperature monitor screensaver by gatopeich\n"
+            "Icon=gatotray\n"
+            "Exec=%s -root\n"
+            "TryExec=%s\n"
+            "StartupNotify=false\n"
+            "Terminal=false\n"
+            "Type=Application\n"
+            "Categories=Screensaver;\n",
+            abs_argv0, abs_argv0);
+        
+        // Write to temp file first
+        GError* error = NULL;
+        if (g_file_set_contents(temp_file, desktop_content, -1, &error)) {
+            // Install using pkexec or sudo to move temp file to system location
+            gchar* install_cmd = g_strdup_printf(
+                "sh -c '(pkexec sh -c \"cp %s %s && chmod 644 %s\" || "
+                "sudo sh -c \"cp %s %s && chmod 644 %s\") && "
+                "rm -f %s && "
+                "(%s || %s || true)'",
+                temp_file, desktop_file_path, desktop_file_path,
+                temp_file, desktop_file_path, desktop_file_path,
+                temp_file,
+                is_mate ? "mate-screensaver-preferences" : "xfce4-screensaver-preferences",
+                is_xfce ? "xfce4-screensaver-preferences" : "mate-screensaver-preferences"
+            );
+            
+            g_message("Installing screensaver for %s", is_mate ? "MATE" : "XFCE4");
+            g_spawn_command_line_async(install_cmd, NULL);
+            g_free(install_cmd);
+        } else {
+            g_warning("Failed to create temp file: %s", error ? error->message : "unknown error");
+            if (error) g_error_free(error);
+        }
+        
+        g_free(desktop_content);
+        g_free(desktop_file_path);
+        g_free(temp_file);
+    }
+    // Fallback to legacy xscreensaver for other desktop environments
+    else {
+        gchar* cmd = g_strdup_printf(
+            "sh -c \"(echo programs: %s -root;echo mode: _1;echo selected: 0) >> %s/.xscreensaver"
+            " && xscreensaver-command -demo\"", abs_argv0, g_get_home_dir());
+        g_message("Installing screensaver for xscreensaver");
+        g_spawn_command_line_async(cmd, NULL);
+        g_free(cmd);
+    }
 }
 
 GRegex* regex_position;
@@ -485,7 +544,7 @@ main( int argc, char *argv[] )
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_FULLSCREEN, NULL);
-        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Use as screensaver");
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Install screensaver");
         g_signal_connect(G_OBJECT (menuitem), "activate", install_screensaver, NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
 
