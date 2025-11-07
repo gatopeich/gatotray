@@ -20,7 +20,12 @@ Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-de
 
 * Very lightweight, colourful, user friendly, broadly compatible.
 
-* Tracks top consuming processes.
+* Tracks top consuming processes across multiple resource categories:
+  - CPU usage (current, average, and cumulative)
+  - Memory consumption
+  - I/O wait time
+  - File descriptors (useful for modern IDEs and applications)
+  - Thread count (important for multi-threaded applications)
 
 * Designed to run continuously in small screen space to provide good idea of the
   CPU's status in a glimpse.
