@@ -58,26 +58,30 @@ void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 void top_procs_append_summary(GString* summary)
 {
     g_string_append_printf(summary, "\n⚡  %d processes, %d active", procs_total, procs_active);
-    g_string_append(summary, "\n\n⭐  Top consumers:\n· ");
-    ProcessInfo_to_GString(top_cpu, summary);
-    if (top_avg && top_avg != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_avg, summary);
+    if (top_cpu) {
+        g_string_append(summary, "\n\n⭐  Top consumers:\n· ");
+        ProcessInfo_to_GString(top_cpu, summary);
+        if (top_avg && top_avg != top_cpu) {
+            g_string_append(summary, "\n· ");
+            ProcessInfo_to_GString(top_avg, summary);
+        }
+        if (top_cumulative && top_cumulative != top_avg && top_cumulative != top_cpu) {
+            g_string_append(summary, "\n· ");
+            ProcessInfo_to_GString(top_cumulative, summary);
+        }
+        if (top_io && top_io != top_cumulative && top_io != top_avg && top_io != top_cpu) {
+            g_string_append(summary, "\n· ");
+            ProcessInfo_to_GString(top_io, summary);
+        }
+        if (top_mem && top_mem != top_io && top_mem != top_cumulative && top_mem != top_avg && top_mem != top_cpu) {
+            g_string_append(summary, "\n· ");
+            ProcessInfo_to_GString(top_mem, summary);
+        }
     }
-    if (top_cumulative && top_cumulative != top_avg && top_cumulative != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_cumulative, summary);
+    if (procs_self) {
+        g_string_append(summary, "\n\n");
+        ProcessInfo_to_GString(procs_self, summary);
     }
-    if (top_io && top_io != top_cumulative && top_io != top_avg && top_io != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_io, summary);
-    }
-    if (top_mem && top_mem != top_io && top_mem != top_cumulative && top_mem != top_avg && top_mem != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_mem, summary);
-    }
-    g_string_append(summary, "\n\n");
-    ProcessInfo_to_GString(procs_self, summary);
 }
 
 ProcessInfo ProcessInfo_scan(const char* pid)
