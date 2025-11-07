@@ -42,7 +42,8 @@
 #define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
 #define PERCENT(scaled) RESCALE(scaled,100)
 
-// Thresholds for dynamic icon selection
+// Thresholds for dynamic icon selection in tooltip text
+// Note: These must be defined before including top_procs.c which uses them
 #define CPU_HIGH_THRESHOLD 20  // CPU usage % above which to show high-load icon (📈)
 #define IO_WAIT_THRESHOLD 1    // I/O wait % below which to show minimal-wait icon (⏱️)
 
