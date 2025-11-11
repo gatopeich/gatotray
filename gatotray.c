@@ -565,16 +565,13 @@ main( int argc, char *argv[] )
                     gdk_display_get_default(), xwindow);
                 
                 if (!screensaver) {
-                    g_warning("Failed to create GDK window for xscreensaver window 0x%lx, "
-                              "will create own window", xwindow);
+                    g_error("Failed to create GDK window for xscreensaver window 0x%lx", xwindow);
                 }
             } else {
-                g_warning("Xscreensaver window 0x%lx does not exist", xwindow);
+                g_error("Xscreensaver window 0x%lx does not exist", xwindow);
             }
-        }
-        
-        // If we couldn't get the xscreensaver window, create our own
-        if (!screensaver) {
+        } else {
+            // No XSCREENSAVER_WINDOW but invoked as screensaver - create our own window
             // screensaver = GDK_WINDOW(gdk_get_default_root_window());
             GdkWindowAttr attr = {
                 "xgatotray", 0, 0,0,400,300, GDK_INPUT_OUTPUT,NULL,NULL,GDK_WINDOW_TOPLEVEL
