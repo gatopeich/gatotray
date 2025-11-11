@@ -10,6 +10,7 @@
 // Loosely based on procps lib
 #include <unistd.h>
 #include <string.h>
+#include <dirent.h>
 
 #ifdef NDEBUG
 #undef  g_debug
@@ -34,10 +35,9 @@ float TICKS_PER_SEC(void) {
     return cached;
 }
 
-// Count open file descriptors for a process
-// Returns FDSize from /proc/[pid]/status (allocated FD table size)
-// Note: FDSize is not exact count but approximates top consumers well
-static unsigned count_fds(const char* pid)
+// Read FDSize and Threads from /proc/[pid]/status in a single pass
+// Returns 1 on success, 0 on error
+static int read_status_info(const char* pid, unsigned* fd_size, unsigned* threads)
 {
     char path[64];
     snprintf(path, sizeof(path), "/proc/%s/status", pid);
@@ -45,40 +45,46 @@ static unsigned count_fds(const char* pid)
     if (!f)
         return 0;
     
-    unsigned count = 0;
+    *fd_size = 0;
+    *threads = 0;
+    int found = 0;
     char line[256];
+    
     while (fgets(line, sizeof(line), f)) {
-        // Look for "FDSize:" field
-        if (sscanf(line, "FDSize: %u", &count) == 1) {
-            fclose(f);
-            return count;
+        unsigned value;
+        if (sscanf(line, "FDSize: %u", &value) == 1) {
+            *fd_size = value;
+            found |= 1;
+            if (found == 3) break;  // Found both, can exit early
+        } else if (sscanf(line, "Threads: %u", &value) == 1) {
+            *threads = value;
+            found |= 2;
+            if (found == 3) break;  // Found both, can exit early
         }
     }
     fclose(f);
-    return 0;
+    return found == 3;
 }
 
-// Count threads for a process
-// Returns count, or 0 on error (reads from /proc/[pid]/status)
-static unsigned count_threads(const char* pid)
+// Count actual open file descriptors by scanning /proc/[pid]/fd
+// This is more expensive but accurate, use only for top processes
+static unsigned count_real_fds(const char* pid)
 {
     char path[64];
-    snprintf(path, sizeof(path), "/proc/%s/status", pid);
-    FILE* f = fopen(path, "r");
-    if (!f)
+    snprintf(path, sizeof(path), "/proc/%s/fd", pid);
+    DIR* dir = opendir(path);
+    if (!dir)
         return 0;
     
     unsigned count = 0;
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-        // Look for "Threads:" field
-        if (sscanf(line, "Threads: %u", &count) == 1) {
-            fclose(f);
-            return count;
-        }
+    struct dirent* entry;
+    while ((entry = readdir(dir))) {
+        // Skip "." and ".." entries
+        if (entry->d_name[0] != '.')
+            count++;
     }
-    fclose(f);
-    return 0;
+    closedir(dir);
+    return count;
 }
 
 
@@ -128,9 +134,14 @@ void ProcessInfo_to_GString_with_category(ProcessInfo* p, GString* out, const ch
     // Dynamic I/O icon based on wait percentage
     const char* io_icon = p->io_wait < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
     
+    // Get real FD count for top processes being displayed
+    char pid_str[32];
+    snprintf(pid_str, sizeof(pid_str), "%u", p->pid);
+    unsigned real_fd_count = count_real_fds(pid_str);
+    
     g_string_append_printf(out, "%s %s: %s%.2g%%cpu %.2g%%avg %s%.2g%%io 💾%.2ggb 📂%d 🧵%d (%d)"
         , category_icon, p->comm, cpu_icon, max2decs(p->cpu), max2decs(p->average_cpu), io_icon, p->io_wait, gb
-        , p->fd_count, p->thread_count, p->pid);
+        , real_fd_count, p->thread_count, p->pid);
     g_warn_if_fail(p->pid>0);
 }
 
@@ -220,10 +231,8 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     // printf("14:17 %llu %llu %llu %llu 24:%llu ~ %s\n", utime, stime, cutime, cstime, rss, buf);
     read_field(42, delayacct_blkio_ticks); pi.io_time = delayacct_blkio_ticks;
 
-    // Count FDs and threads for all processes
-    // This is lightweight (readdir) so we can do it for all processes
-    pi.fd_count = count_fds(pid);
-    pi.thread_count = count_threads(pid);
+    // Read FDSize and Threads from /proc/[pid]/status in single pass
+    read_status_info(pid, &pi.fd_count, &pi.thread_count);
 
     pi.sample_time = cpu_total_ticks;
     return pi;
