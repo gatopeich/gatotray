@@ -523,10 +523,7 @@ void history_save(void)
     if (!history || hist_size == 0)
         return;
     
-    gchar* cache_dir = g_build_filename(g_get_user_cache_dir(), NULL);
-    g_mkdir_with_parents(cache_dir, 0700);
-    gchar* path = g_build_filename(cache_dir, history_cache_filename, NULL);
-    g_free(cache_dir);
+    gchar* path = g_build_filename("/tmp", history_cache_filename, NULL);
     
     FILE* f = fopen(path, "wb");
     if (f) {
@@ -542,7 +539,7 @@ void history_save(void)
 
 void history_load(void)
 {
-    gchar* path = g_build_filename(g_get_user_cache_dir(), history_cache_filename, NULL);
+    gchar* path = g_build_filename("/tmp", history_cache_filename, NULL);
     
     FILE* f = fopen(path, "rb");
     if (!f) {
