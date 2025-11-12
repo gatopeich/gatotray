@@ -2,12 +2,15 @@
 // Goals:
 // - Track top memory consumers
 // - Track top CPU consumers
+// - Track top file descriptor consumers (modern IDEs)
+// - Track top thread consumers (multi-threaded apps)
 // - Identify processes starving the system
 // - Do OOM kill before it is too late?
 
 // Loosely based on procps lib
 #include <unistd.h>
 #include <string.h>
+#include <dirent.h>
 
 #ifdef NDEBUG
 #undef  g_debug
@@ -32,48 +35,151 @@ float TICKS_PER_SEC(void) {
     return cached;
 }
 
+// Read FDSize and Threads from /proc/[pid]/status in a single pass
+// Returns 1 on success, 0 on error
+static int read_status_info(const char* pid, unsigned* fd_size, unsigned* threads)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%s/status", pid);
+    FILE* f = fopen(path, "r");
+    if (!f)
+        return 0;
+    
+    *fd_size = 0;
+    *threads = 0;
+    int found = 0;
+    char line[256];
+    
+    while (fgets(line, sizeof(line), f)) {
+        unsigned value;
+        if (sscanf(line, "FDSize: %u", &value) == 1) {
+            *fd_size = value;
+            found |= 1;
+            if (found == 3) break;  // Found both, can exit early
+        } else if (sscanf(line, "Threads: %u", &value) == 1) {
+            *threads = value;
+            found |= 2;
+            if (found == 3) break;  // Found both, can exit early
+        }
+    }
+    fclose(f);
+    return found == 3;
+}
+
+// Count actual open file descriptors by scanning /proc/[pid]/fd
+// This is more expensive but accurate, use only for top processes
+static unsigned count_real_fds(const char* pid)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%s/fd", pid);
+    DIR* dir = opendir(path);
+    if (!dir)
+        return 0;
+    
+    unsigned count = 0;
+    struct dirent* entry;
+    while ((entry = readdir(dir))) {
+        // Skip "." and ".." entries
+        if (entry->d_name[0] != '.')
+            count++;
+    }
+    closedir(dir);
+    return count;
+}
+
 
 typedef unsigned long long ULL;
 typedef struct ProcessInfo {
     struct ProcessInfo* next; // embedded single linked list
-    unsigned pid, rss;
+    unsigned pid, rss, fd_count, thread_count;
     ULL cpu_time, io_time, sample_time;
     float cpu, io_wait, average_cpu;
     char comm[32];
 } ProcessInfo;
 
 int procs_total=0, procs_active=0;
+// Track top resource consumers:
+// - top_cpu: highest current CPU usage (%)
+// - top_avg: highest average CPU usage since process start (%)
+// - top_cumulative: highest absolute CPU time consumed (ticks) - often long-running system processes
+// - top_io: highest I/O wait time
+// - top_mem: highest memory usage
+// - top_fds: highest file descriptor count (modern IDEs often have many open files)
+// - top_threads: highest thread count (modern applications often use many threads)
 ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
-    , *procs_self=NULL;
+    , *top_cumulative=NULL, *top_fds=NULL, *top_threads=NULL, *procs_self=NULL;
+
+// Helper macro to format small values as 0 for cleaner display
+#define max2decs(g) (g>.005?g:.0)
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     float gb = p->rss * PAGE_GB();
-    #define max2decs(g) (g>.005?g:.0)
-    g_string_append_printf(out, "%s: %.2g%%cpu %.2g%%avg %.2g%%io %.2ggb (%d)"
-        , p->comm, max2decs(p->cpu), max2decs(p->average_cpu), p->io_wait, gb, p->pid);
+    // Dynamic CPU icon based on usage (using raw value for accurate threshold comparison)
+    const char* cpu_icon = p->cpu > CPU_HIGH_THRESHOLD ? "📈" : "📉";
+    // Dynamic I/O icon based on wait percentage
+    const char* io_icon = p->io_wait < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
+    
+    g_string_append_printf(out, "%s: %s%.2g%%cpu %.2g%%avg %s%.2g%%io 💾%.2ggb 📂%d 🧵%d (%d)"
+        , p->comm, cpu_icon, max2decs(p->cpu), max2decs(p->average_cpu), io_icon, p->io_wait, gb
+        , p->fd_count, p->thread_count, p->pid);
+    g_warn_if_fail(p->pid>0);
+}
+
+void ProcessInfo_to_GString_with_category(ProcessInfo* p, GString* out, const char* category_icon)
+{
+    float gb = p->rss * PAGE_GB();
+    // Dynamic CPU icon based on usage (using raw value for accurate threshold comparison)
+    const char* cpu_icon = p->cpu > CPU_HIGH_THRESHOLD ? "📈" : "📉";
+    // Dynamic I/O icon based on wait percentage
+    const char* io_icon = p->io_wait < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
+    
+    // Get real FD count for top processes being displayed
+    char pid_str[32];
+    snprintf(pid_str, sizeof(pid_str), "%u", p->pid);
+    unsigned real_fd_count = count_real_fds(pid_str);
+    
+    g_string_append_printf(out, "%s %s: %s%.2g%%cpu %.2g%%avg %s%.2g%%io 💾%.2ggb 📂%d 🧵%d (%d)"
+        , category_icon, p->comm, cpu_icon, max2decs(p->cpu), max2decs(p->average_cpu), io_icon, p->io_wait, gb
+        , real_fd_count, p->thread_count, p->pid);
     g_warn_if_fail(p->pid>0);
 }
 
 void top_procs_append_summary(GString* summary)
 {
-    g_string_append_printf(summary, "\n%d processes, %d active", procs_total, procs_active);
-    g_string_append(summary, "\n\nTop consumers:\n· ");
-    ProcessInfo_to_GString(top_cpu, summary);
-    if (top_avg != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_avg, summary);
+    g_string_append_printf(summary, "\n📊  %d processes, %d active", procs_total, procs_active);
+    if (top_cpu) {
+        g_string_append(summary, "\n\n📊  Top consumers:\n");
+        ProcessInfo_to_GString_with_category(top_cpu, summary, "🔥");
+        if (top_avg && top_avg != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_avg, summary, "🔥");
+        }
+        if (top_cumulative && top_cumulative != top_avg && top_cumulative != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_cumulative, summary, "🔥");
+        }
+        if (top_io && top_io != top_cumulative && top_io != top_avg && top_io != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_io, summary, "🔁");
+        }
+        if (top_mem && top_mem != top_io && top_mem != top_cumulative && top_mem != top_avg && top_mem != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_mem, summary, "🧠");
+        }
+        if (top_fds && top_fds != top_mem && top_fds != top_io && top_fds != top_cumulative && top_fds != top_avg && top_fds != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_fds, summary, "📂");
+        }
+        if (top_threads && top_threads != top_fds && top_threads != top_mem && top_threads != top_io && top_threads != top_cumulative && top_threads != top_avg && top_threads != top_cpu) {
+            g_string_append(summary, "\n");
+            ProcessInfo_to_GString_with_category(top_threads, summary, "🧵");
+        }
     }
-    if (top_io != top_avg && top_io != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_io, summary);
+    if (procs_self) {
+        g_string_append(summary, "\n\n");
+        ProcessInfo_to_GString(procs_self, summary);
     }
-    if (top_mem != top_io && top_mem != top_avg && top_mem != top_cpu) {
-        g_string_append(summary, "\n· ");
-        ProcessInfo_to_GString(top_mem, summary);
-    }
-    g_string_append(summary, "\n\n");
-    ProcessInfo_to_GString(procs_self, summary);
 }
 
 ProcessInfo ProcessInfo_scan(const char* pid)
@@ -124,6 +230,9 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     read_field(24, rss); pi.rss = rss; // TODO: Discount shared memory
     // printf("14:17 %llu %llu %llu %llu 24:%llu ~ %s\n", utime, stime, cutime, cstime, rss, buf);
     read_field(42, delayacct_blkio_ticks); pi.io_time = delayacct_blkio_ticks;
+
+    // Read FDSize and Threads from /proc/[pid]/status in single pass
+    read_status_info(pid, &pi.fd_count, &pi.thread_count);
 
     pi.sample_time = cpu_total_ticks;
     return pi;
@@ -199,6 +308,16 @@ void top_procs_refresh(void)
             top_cpu = p;
         if (!top_io || proc.io_wait > top_io->io_wait)
             top_io = p;
+        // Track process with highest absolute cumulative CPU time (total ticks),
+        // which is often long-running processes like systemd, regardless of current usage
+        if (!top_cumulative || proc.cpu_time > top_cumulative->cpu_time)
+            top_cumulative = p;
+        
+        // Track top FD and thread consumers
+        if (!top_fds || proc.fd_count > top_fds->fd_count)
+            top_fds = p;
+        if (!top_threads || proc.thread_count > top_threads->thread_count)
+            top_threads = p;
 
         p = *(it = &(p->next));
     }

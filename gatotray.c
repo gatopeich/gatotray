@@ -35,21 +35,29 @@
 #include <sys/types.h>
 #include <signal.h>
 #include <unistd.h>
+#include <string.h>
+#include <errno.h>
+#include <time.h>
 
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
 #include <gdk/gdkx.h>
 #include <X11/Xlib.h>
 
+#define SCALE (1<<15)
+#define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
+#define PERCENT(scaled) RESCALE(scaled,100)
+
+// Thresholds for dynamic icon selection in tooltip text
+// Note: These must be defined before including top_procs.c which uses them
+#define CPU_HIGH_THRESHOLD 20  // CPU usage % above which to show high-load icon (📈)
+#define IO_WAIT_THRESHOLD 1    // I/O wait % below which to show minimal-wait icon (🔄)
+
 // TODO: Include headers instead of full modules
 #include "cpu_usage.c"
 #include "settings.c"
 #include "top_procs.c"
 #include "gatotray.xpm"
-
-#define SCALE (1<<15)
-#define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
-#define PERCENT(scaled) RESCALE(scaled,100)
 
 typedef struct {
     CPU_Usage cpu;
@@ -67,6 +75,10 @@ GtkStatusIcon *app_icon = NULL;
 GdkWindow *screensaver = NULL;
 GString* info_text = NULL;
 gchar* abs_argv0;
+
+// Forward declarations for history cache functions
+void history_save(void);
+void history_load(void);
 
 static void
 popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* menu)
@@ -326,15 +338,20 @@ timeout_cb (gpointer data)
     else
         g_string_set_size(info_text, 0);
 
-    g_string_append_printf(info_text, GATOTRAY_VERSION "\nCPU %d%% busy, %d%% on I/O-wait @ %d MHz"
-        , PERCENT(history[0].cpu.usage), PERCENT(history[0].cpu.iowait), scaling_cur_freq);
+    // Dynamic CPU icon based on usage
+    const char* cpu_icon = PERCENT(history[0].cpu.usage) > CPU_HIGH_THRESHOLD ? "📈" : "📉";
+    // Dynamic I/O icon based on wait percentage
+    const char* io_icon = PERCENT(history[0].cpu.iowait) < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
+    
+    g_string_append_printf(info_text, GATOTRAY_VERSION "\n%s  CPU %d%% busy, %s  %d%% on I/O-wait @ %d MHz"
+        , cpu_icon, PERCENT(history[0].cpu.usage), io_icon, PERCENT(history[0].cpu.iowait), scaling_cur_freq);
 
     if (meminfo.Total_MB)
-        g_string_append_printf (info_text, "\nFree RAM: %d/%d MB"
+        g_string_append_printf (info_text, "\n💾  Free RAM: %d/%d MB"
             , RESCALE(history[0].free_memory, meminfo.Total_MB), meminfo.Total_MB);
 
     if (history[0].temp)
-        g_string_append_printf (info_text, ". Temperature: %d°C\n", history[0].temp);
+        g_string_append_printf (info_text, ". 🌡️  Temperature: %d°C\n", history[0].temp);
 
     top_procs_append_summary(info_text);
 
@@ -346,6 +363,13 @@ timeout_cb (gpointer data)
     }
 
     redraw();
+
+    // Save history every minute (60 seconds)
+    static time_t save_time = 0;
+    if (save_time <= now) {
+        history_save();
+        save_time = now + 60;
+    }
 
     // Re-add every time to handle changes in refresh_interval_ms
     g_timeout_add(refresh_interval_ms, timeout_cb, NULL);
@@ -520,6 +544,9 @@ main( int argc, char *argv[] )
     history = g_malloc(sizeof(*history));
     hist_size = width = 1;
     update_history();
+    
+    // Load cached history from previous run
+    history_load();
 
     gchar** envp = g_get_environ();
     const gchar* wid = g_environ_getenv(envp,"XSCREENSAVER_WINDOW");
@@ -595,4 +622,94 @@ main( int argc, char *argv[] )
     g_timeout_add(refresh_interval_ms, timeout_cb, NULL);
     gtk_main();
     return 0;
+}
+
+// History cache functions implementation
+static const gchar* history_cache_filename = "gatotray-history.bin";
+
+void history_save(void)
+{
+    if (!history || hist_size == 0)
+        return;
+    
+    gchar* path = g_build_filename("/tmp", history_cache_filename, NULL);
+    
+    FILE* f = fopen(path, "wb");
+    if (f) {
+        // Write the history data (file size implies count)
+        fwrite(history, sizeof(CPUstatus), hist_size, f);
+        fclose(f);
+        g_debug("Saved %d history entries to %s", hist_size, path);
+    } else {
+        g_warning("Failed to save history to %s: %s", path, g_strerror(errno));
+    }
+    g_free(path);
+}
+
+void history_load(void)
+{
+    gchar* path = g_build_filename("/tmp", history_cache_filename, NULL);
+    
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        g_debug("No history cache file found at %s", path);
+        g_free(path);
+        return;
+    }
+    
+    // Read structs one at a time until EOF
+    int capacity = 100;
+    int saved_size = 0;
+    CPUstatus* saved_history = g_malloc(capacity * sizeof(CPUstatus));
+    
+    while (fread(&saved_history[saved_size], sizeof(CPUstatus), 1, f) == 1) {
+        saved_size++;
+        if (saved_size >= capacity) {
+            capacity *= 2;
+            saved_history = g_realloc(saved_history, capacity * sizeof(CPUstatus));
+        }
+        if (saved_size > 10000) {
+            g_warning("History cache file too large (> 10000 entries)");
+            g_free(saved_history);
+            fclose(f);
+            g_free(path);
+            return;
+        }
+    }
+    fclose(f);
+    
+    if (saved_size == 0) {
+        g_warning("No history data in cache file");
+        g_free(saved_history);
+        g_free(path);
+        return;
+    }
+    
+    g_message("Loaded %d history entries from %s", saved_size, path);
+    g_free(path);
+    
+    // If current history is smaller than saved, expand it
+    if (hist_size < saved_size) {
+        history = g_realloc(history, saved_size * sizeof(CPUstatus));
+        hist_size = saved_size;
+        if (width < hist_size)
+            width = hist_size;
+    }
+    
+    // Copy saved history to current history
+    // If saved history is shorter than current size, repeat oldest point to fill
+    if (saved_size >= hist_size) {
+        // Saved history is same size or larger - just copy what we need
+        memcpy(history, saved_history, hist_size * sizeof(CPUstatus));
+    } else {
+        // Saved history is shorter - copy it and fill remaining with oldest point
+        memcpy(history, saved_history, saved_size * sizeof(CPUstatus));
+        CPUstatus oldest = saved_history[saved_size - 1];
+        for (int i = saved_size; i < hist_size; i++) {
+            history[i] = oldest;
+        }
+        g_debug("Filled remaining %d entries with oldest data point", hist_size - saved_size);
+    }
+    
+    g_free(saved_history);
 }
