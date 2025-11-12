@@ -394,80 +394,14 @@ install_screensaver()
                        (session && (g_strstr_len(session, -1, "xfce") || g_strstr_len(session, -1, "xfce4")));
     
     // Modern screensaver systems (MATE/XFCE4) use .desktop files
+    // The desktop file is installed by the package system, so just launch preferences
     if (is_mate || is_xfce) {
-        const gchar* screensaver_dir = "/usr/share/applications/screensavers";
-        gchar* desktop_file_path = g_strdup_printf("%s/gatotray-screensaver.desktop", screensaver_dir);
-        
-        // Create the .desktop file content
-        gchar* desktop_content = g_strdup_printf(
-            "[Desktop Entry]\n"
-            "Name=Gatotray CPU Monitor\n"
-            "Comment=CPU & Temperature monitor screensaver by gatopeich\n"
-            "Icon=gatotray\n"
-            "Exec=%s -root\n"
-            "TryExec=%s\n"
-            "StartupNotify=false\n"
-            "Terminal=false\n"
-            "Type=Application\n"
-            "Categories=Screensaver;\n",
-            abs_argv0, abs_argv0);
-        
-        // Create a secure temporary file
-        GError* error = NULL;
-        gchar* temp_file = NULL;
-        gint fd = g_file_open_tmp("gatotray-screensaver-XXXXXX.desktop", &temp_file, &error);
-        
-        if (fd != -1) {
-            // Write content to temp file
-            if (g_file_set_contents(temp_file, desktop_content, -1, &error)) {
-                // Properly escape file paths for shell commands
-                gchar* quoted_temp = g_shell_quote(temp_file);
-                gchar* quoted_dest = g_shell_quote(desktop_file_path);
-                
-                // Determine which screensaver preferences tool to use
-                const gchar* prefs_tool = is_mate ? "mate-screensaver-preferences" : 
-                                                   "xfce4-screensaver-preferences";
-                
-                // Install using pkexec or sudo to move temp file to system location
-                gchar* install_cmd = g_strdup_printf(
-                    "sh -c '(pkexec sh -c \"cp %s %s && chmod 644 %s\" || "
-                    "sudo sh -c \"cp %s %s && chmod 644 %s\") && "
-                    "rm -f %s && "
-                    "(%s || true)'",
-                    quoted_temp, quoted_dest, quoted_dest,
-                    quoted_temp, quoted_dest, quoted_dest,
-                    quoted_temp,
-                    prefs_tool
-                );
-                
-                g_message("Installing screensaver for %s", is_mate ? "MATE" : "XFCE4");
-                g_spawn_command_line_async(install_cmd, NULL);
-                
-                g_free(quoted_temp);
-                g_free(quoted_dest);
-                g_free(install_cmd);
-            } else {
-                g_warning("Failed to write temp file: %s", error ? error->message : "unknown error");
-                if (error) {
-                    g_error_free(error);
-                    error = NULL;
-                }
-                // Clean up temp file on error
-                if (unlink(temp_file) != 0) {
-                    g_warning("Failed to remove temp file: %s", temp_file);
-                }
-            }
-            close(fd);
-            g_free(temp_file);
-        } else {
-            g_warning("Failed to create temp file: %s", error ? error->message : "unknown error");
-            if (error) g_error_free(error);
-        }
-        
-        g_free(desktop_content);
-        g_free(desktop_file_path);
+        const gchar* prefs_tool = is_mate ? "mate-screensaver-preferences" : 
+                                           "xfce4-screensaver-preferences";
+        g_message("Launching screensaver preferences for %s", is_mate ? "MATE" : "XFCE4");
+        g_spawn_command_line_async(prefs_tool, NULL);
     }
-    // Fallback to legacy xscreensaver for other desktop environments
+    // Legacy xscreensaver for other desktop environments
     else {
         gchar* quoted_argv0 = g_shell_quote(abs_argv0);
         gchar* quoted_home = g_shell_quote(g_get_home_dir());
