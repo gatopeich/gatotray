@@ -386,82 +386,55 @@ void
 install_screensaver()
 {
     // Always write to ~/.xscreensaver configuration file
-    // This ensures compatibility across all desktop environments
     gchar* xscreensaver_path = g_build_filename(g_get_home_dir(), ".xscreensaver", NULL);
     
-    // Read existing content if file exists
+    // Read existing content to check if already configured
     gchar* existing_content = NULL;
-    gsize length = 0;
-    g_file_get_contents(xscreensaver_path, &existing_content, &length, NULL);
-    
-    // Prepare the lines to add for gatotray
-    gchar* gatotray_entry = g_strdup_printf("programs:\t%s -root\n", abs_argv0);
-    gchar* mode_line = "mode:\t\t_1\n";
-    gchar* selected_line = "selected:\t0\n";
+    g_file_get_contents(xscreensaver_path, &existing_content, NULL, NULL);
     
     // Check if gatotray is already configured
-    gboolean already_configured = existing_content && g_strstr_len(existing_content, -1, abs_argv0);
-    
-    if (!already_configured) {
-        // Append gatotray configuration
-        GString* new_content = g_string_new(existing_content ? existing_content : "");
-        g_string_append(new_content, gatotray_entry);
-        g_string_append(new_content, mode_line);
-        g_string_append(new_content, selected_line);
+    if (!existing_content || !g_strstr_len(existing_content, -1, abs_argv0)) {
+        // Prepare single configuration string to append
+        gchar* config_entry = g_strdup_printf(
+            "programs:\t%s -root\n"
+            "mode:\t\t_1\n"
+            "selected:\t0\n",
+            abs_argv0);
         
-        // Write back to file
-        GError* error = NULL;
-        if (!g_file_set_contents(xscreensaver_path, new_content->str, -1, &error)) {
-            g_warning("Failed to write .xscreensaver config: %s", error ? error->message : "unknown error");
-            if (error) g_error_free(error);
-        } else {
-            g_message("Added gatotray to xscreensaver configuration");
+        // Append to file using standard file operations
+        FILE* f = fopen(xscreensaver_path, "a");
+        if (f) {
+            fprintf(f, "%s", config_entry);
+            fclose(f);
         }
-        
-        g_string_free(new_content, TRUE);
+        g_free(config_entry);
     }
     
     g_free(existing_content);
-    g_free(gatotray_entry);
     g_free(xscreensaver_path);
     
-    // Detect desktop environment to launch appropriate settings app
+    // Detect desktop environment using case-insensitive search
     const gchar* desktop = g_getenv("XDG_CURRENT_DESKTOP");
     const gchar* session = g_getenv("DESKTOP_SESSION");
-    gboolean is_mate = (desktop && (g_strstr_len(desktop, -1, "MATE") || g_strstr_len(desktop, -1, "mate"))) ||
-                       (session && g_strstr_len(session, -1, "mate"));
-    gboolean is_xfce = (desktop && (g_strstr_len(desktop, -1, "XFCE") || g_strstr_len(desktop, -1, "xfce"))) ||
-                       (session && (g_strstr_len(session, -1, "xfce") || g_strstr_len(session, -1, "xfce4")));
+    gchar* desktop_lower = desktop ? g_ascii_strdown(g_strconcat(desktop, session ? " " : "", session ? session : "", NULL), -1) : (session ? g_ascii_strdown(session, -1) : NULL);
     
-    // Try to launch the appropriate screensaver preferences tool
-    const gchar* prefs_tool = NULL;
-    if (is_mate) {
-        prefs_tool = "mate-screensaver-preferences";
-    } else if (is_xfce) {
-        prefs_tool = "xfce4-screensaver-preferences";
+    gboolean is_mate = desktop_lower && strstr(desktop_lower, "mate");
+    gboolean is_xfce = desktop_lower && (strstr(desktop_lower, "xfce") || strstr(desktop_lower, "xfce4"));
+    
+    // Launch appropriate screensaver preferences tool
+    const gchar* prefs_tool = is_mate ? "mate-screensaver-preferences" :
+                              is_xfce ? "xfce4-screensaver-preferences" : NULL;
+    
+    if (prefs_tool && !g_spawn_command_line_async(prefs_tool, NULL)) {
+        prefs_tool = NULL; // Failed, will try fallback
     }
     
-    gboolean launched = FALSE;
-    if (prefs_tool) {
-        GError* error = NULL;
-        g_message("Launching screensaver preferences: %s", prefs_tool);
-        launched = g_spawn_command_line_async(prefs_tool, &error);
-        if (!launched) {
-            g_warning("Failed to launch %s: %s", prefs_tool, error ? error->message : "unknown error");
-            if (error) g_error_free(error);
-        }
+    // Fallback to xscreensaver if desktop-specific tool not available or failed
+    if (!prefs_tool) {
+        g_spawn_command_line_async("xscreensaver-command -demo", NULL);
     }
     
-    // If desktop-specific tool failed or wasn't available, try xscreensaver as fallback
-    if (!launched) {
-        GError* error = NULL;
-        g_message("Launching xscreensaver-command -demo as fallback");
-        launched = g_spawn_command_line_async("xscreensaver-command -demo", &error);
-        if (!launched) {
-            g_warning("Failed to launch xscreensaver-command: %s", error ? error->message : "unknown error");
-            if (error) g_error_free(error);
-        }
-    }
+    g_free(desktop_lower);
 }
 
 GRegex* regex_position;
