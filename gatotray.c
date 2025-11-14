@@ -408,14 +408,14 @@ install_screensaver()
     // Detect desktop environment using case-insensitive search
     const gchar* desktop = g_getenv("XDG_CURRENT_DESKTOP");
     const gchar* session = g_getenv("DESKTOP_SESSION");
-    gchar* desktop_lower = desktop ? g_ascii_strdown(g_strconcat(desktop, session ? " " : "", session ? session : "", NULL), -1) : (session ? g_ascii_strdown(session, -1) : NULL);
-    
-    gboolean is_mate = desktop_lower && strstr(desktop_lower, "mate");
-    gboolean is_xfce = desktop_lower && (strstr(desktop_lower, "xfce") || strstr(desktop_lower, "xfce4"));
+    gchar* env_str = g_strdup_printf("%s %s", desktop ? desktop : "", session ? session : "");
+    gchar* env_lower = g_ascii_strdown(env_str, -1);
+    g_free(env_str);
     
     // Launch appropriate screensaver preferences tool
-    const gchar* prefs_tool = is_mate ? "mate-screensaver-preferences" :
-                              is_xfce ? "xfce4-screensaver-preferences" : NULL;
+    const gchar* prefs_tool = strstr(env_lower, "mate") ? "mate-screensaver-preferences" :
+                              strstr(env_lower, "xfce") ? "xfce4-screensaver-preferences" : NULL;
+    g_free(env_lower);
     
     if (prefs_tool && !g_spawn_command_line_async(prefs_tool, NULL)) {
         prefs_tool = NULL; // Failed, will try fallback
@@ -425,8 +425,6 @@ install_screensaver()
     if (!prefs_tool) {
         g_spawn_command_line_async("xscreensaver-command -demo", NULL);
     }
-    
-    g_free(desktop_lower);
 }
 
 GRegex* regex_position;
