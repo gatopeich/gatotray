@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Gatotray CPU Monitor
+Comment=CPU & Temperature monitor screensaver by gatopeich
+Icon=gatotray
+Exec=gatotray -root
+TryExec=gatotray
+StartupNotify=false
+Terminal=false
+Type=Application
+Categories=Screensaver;

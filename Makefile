@@ -18,7 +18,7 @@ VERSION := 4.1
 REL := $(shell git log -1 --format=%cd --date=format:%Y%m%d || date +%Y%m%d)
 CFLAGS := -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION).$(REL)\" $(CFLAGS) -Wno-deprecated-declarations
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
-LDLIBS := `pkg-config --libs gtk+-2.0` $(LDLIBS)
+LDLIBS := `pkg-config --libs gtk+-2.0` -lX11 $(LDLIBS)
 
 $(warn $(DESTDIR))
 
@@ -31,16 +31,18 @@ gatotray: gatotray.o
 gatotray.i386: gatotray.o.i386
 	$(LD) -m32 -o $@ $^ $(LDLIBS)
 
-install: gatotray gatotray.xpm gatotray.desktop
+install: gatotray gatotray.xpm gatotray.desktop gatotray-screensaver.desktop
 	install -svDt $(DESTDIR)/usr/bin/ gatotray
 	install -vDt $(DESTDIR)/usr/share/icons/ gatotray.xpm
 	install -vDt $(DESTDIR)/usr/share/applications/ gatotray.desktop
+	install -vDt $(DESTDIR)/usr/share/applications/screensavers/ gatotray-screensaver.desktop
 
 deb: gatotray-$(VERSION).$(REL).deb
-gatotray-$(VERSION).$(REL).deb: gatotray gatotray.xpm gatotray.desktop Debian-Control
+gatotray-$(VERSION).$(REL).deb: gatotray gatotray.xpm gatotray.desktop gatotray-screensaver.desktop Debian-Control
 	install -vD gatotray root/usr/bin/gatotray
 	strip root/usr/bin/gatotray
 	install -vD gatotray.desktop root/usr/share/applications/gatotray.desktop
+	install -vD gatotray-screensaver.desktop root/usr/share/applications/screensavers/gatotray-screensaver.desktop
 	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
 	install -vD gatotray3X.png root/usr/share/icons/gatotray.png
 	install -vD Debian-Control root/DEBIAN/control
