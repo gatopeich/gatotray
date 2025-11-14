@@ -394,20 +394,12 @@ install_screensaver()
     
     // Check if gatotray is already configured
     if (!existing_content || !g_strstr_len(existing_content, -1, abs_argv0)) {
-        // Prepare single configuration string to append
-        gchar* config_entry = g_strdup_printf(
-            "programs:\t%s -root\n"
-            "mode:\t\t_1\n"
-            "selected:\t0\n",
-            abs_argv0);
-        
         // Append to file using standard file operations
         FILE* f = fopen(xscreensaver_path, "a");
         if (f) {
-            fprintf(f, "%s", config_entry);
+            fprintf(f, "\nprograms:\t%s -root\nmode:\t\t_1\nselected:\t0\n", abs_argv0);
             fclose(f);
         }
-        g_free(config_entry);
     }
     
     g_free(existing_content);
