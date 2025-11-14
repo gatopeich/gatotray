@@ -60,9 +60,8 @@ To use gatotray as your screensaver:
 
 1. Right-click the gatotray icon in your system tray
 2. Click "Install screensaver"
-3. Authenticate when prompted (pkexec or sudo)
-4. The screensaver preferences dialog will open automatically
-5. Select "Gatotray CPU Monitor" from the list of screensavers
+3. The screensaver preferences dialog will open automatically
+4. Select "Gatotray CPU Monitor" from the list of screensavers
 
 **Supported Desktop Environments:**
 - **MATE** (Linux Mint MATE, Ubuntu MATE, etc.) - Uses mate-screensaver
