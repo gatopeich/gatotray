@@ -385,7 +385,47 @@ open_website()
 void
 install_screensaver()
 {
-    // Detect which screensaver system is in use
+    // Always write to ~/.xscreensaver configuration file
+    // This ensures compatibility across all desktop environments
+    gchar* xscreensaver_path = g_build_filename(g_get_home_dir(), ".xscreensaver", NULL);
+    
+    // Read existing content if file exists
+    gchar* existing_content = NULL;
+    gsize length = 0;
+    g_file_get_contents(xscreensaver_path, &existing_content, &length, NULL);
+    
+    // Prepare the lines to add for gatotray
+    gchar* gatotray_entry = g_strdup_printf("programs:\t%s -root\n", abs_argv0);
+    gchar* mode_line = "mode:\t\t_1\n";
+    gchar* selected_line = "selected:\t0\n";
+    
+    // Check if gatotray is already configured
+    gboolean already_configured = existing_content && g_strstr_len(existing_content, -1, abs_argv0);
+    
+    if (!already_configured) {
+        // Append gatotray configuration
+        GString* new_content = g_string_new(existing_content ? existing_content : "");
+        g_string_append(new_content, gatotray_entry);
+        g_string_append(new_content, mode_line);
+        g_string_append(new_content, selected_line);
+        
+        // Write back to file
+        GError* error = NULL;
+        if (!g_file_set_contents(xscreensaver_path, new_content->str, -1, &error)) {
+            g_warning("Failed to write .xscreensaver config: %s", error ? error->message : "unknown error");
+            if (error) g_error_free(error);
+        } else {
+            g_message("Added gatotray to xscreensaver configuration");
+        }
+        
+        g_string_free(new_content, TRUE);
+    }
+    
+    g_free(existing_content);
+    g_free(gatotray_entry);
+    g_free(xscreensaver_path);
+    
+    // Detect desktop environment to launch appropriate settings app
     const gchar* desktop = g_getenv("XDG_CURRENT_DESKTOP");
     const gchar* session = g_getenv("DESKTOP_SESSION");
     gboolean is_mate = (desktop && (g_strstr_len(desktop, -1, "MATE") || g_strstr_len(desktop, -1, "mate"))) ||
@@ -393,26 +433,34 @@ install_screensaver()
     gboolean is_xfce = (desktop && (g_strstr_len(desktop, -1, "XFCE") || g_strstr_len(desktop, -1, "xfce"))) ||
                        (session && (g_strstr_len(session, -1, "xfce") || g_strstr_len(session, -1, "xfce4")));
     
-    // Modern screensaver systems (MATE/XFCE4) use .desktop files
-    // The desktop file is installed by the package system, so just launch preferences
-    if (is_mate || is_xfce) {
-        const gchar* prefs_tool = is_mate ? "mate-screensaver-preferences" : 
-                                           "xfce4-screensaver-preferences";
-        g_message("Launching screensaver preferences for %s", is_mate ? "MATE" : "XFCE4");
-        g_spawn_command_line_async(prefs_tool, NULL);
+    // Try to launch the appropriate screensaver preferences tool
+    const gchar* prefs_tool = NULL;
+    if (is_mate) {
+        prefs_tool = "mate-screensaver-preferences";
+    } else if (is_xfce) {
+        prefs_tool = "xfce4-screensaver-preferences";
     }
-    // Legacy xscreensaver for other desktop environments
-    else {
-        gchar* quoted_argv0 = g_shell_quote(abs_argv0);
-        gchar* quoted_home = g_shell_quote(g_get_home_dir());
-        gchar* cmd = g_strdup_printf(
-            "sh -c \"(echo programs: %s -root;echo mode: _1;echo selected: 0) >> %s/.xscreensaver"
-            " && xscreensaver-command -demo\"", quoted_argv0, quoted_home);
-        g_message("Installing screensaver for xscreensaver");
-        g_spawn_command_line_async(cmd, NULL);
-        g_free(quoted_argv0);
-        g_free(quoted_home);
-        g_free(cmd);
+    
+    gboolean launched = FALSE;
+    if (prefs_tool) {
+        GError* error = NULL;
+        g_message("Launching screensaver preferences: %s", prefs_tool);
+        launched = g_spawn_command_line_async(prefs_tool, &error);
+        if (!launched) {
+            g_warning("Failed to launch %s: %s", prefs_tool, error ? error->message : "unknown error");
+            if (error) g_error_free(error);
+        }
+    }
+    
+    // If desktop-specific tool failed or wasn't available, try xscreensaver as fallback
+    if (!launched) {
+        GError* error = NULL;
+        g_message("Launching xscreensaver-command -demo as fallback");
+        launched = g_spawn_command_line_async("xscreensaver-command -demo", &error);
+        if (!launched) {
+            g_warning("Failed to launch xscreensaver-command: %s", error ? error->message : "unknown error");
+            if (error) g_error_free(error);
+        }
     }
 }
 
