@@ -195,9 +195,16 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     }
     int len = fread(buf, 1, sizeof(buf)-1, f);
     fclose(f);
+    buf[len] = '\0';  // Ensure null termination
 
-    // Extract executable name, handling extra parentheses e.g. ((sd-pam)) 
-    char* comm = strchr(buf, '(') + 1;
+    // Extract executable name, handling extra parentheses e.g. ((sd-pam))
+    char* comm = strchr(buf, '(');
+    if (!comm) {
+        // Malformed/truncated data - signal caller to skip this process
+        pi.pid = 0;
+        return pi;
+    }
+    comm++;
     int comm_len = len - (comm-buf) - 1;
     while (comm_len>0 && comm[comm_len] != ')') --comm_len;
     int l = 0;
@@ -209,10 +216,12 @@ ProcessInfo ProcessInfo_scan(const char* pid)
 
     // Hacky low level field parsing just for fun
     char *fp = comm + comm_len + 4; // skip parens and spaces around 1-char field #3 "state"
+    char *buf_end = buf + len;
     int field = 4;
-    #define move_to(n) while(field<n) { while(*fp++>' ') {} ++field; }
+    #define move_to(n) while(field<n) { while(fp < buf_end && *fp++>' ') {} ++field; }
     #define read_field(n, name) ULL name=0; move_to(n); \
-        do {name = name*10 + *fp - '0';} while (*++fp >= '0'); \
+        if (fp >= buf_end) { pi.pid = 0; return pi; } \
+        do {name = name*10 + *fp - '0';} while (++fp < buf_end && *fp >= '0'); \
         ++fp; ++field // Finish pointing to next field
 
     // Add up CPU usage...
@@ -263,6 +272,9 @@ void top_procs_refresh(void)
         proc_dir = g_dir_open ("/proc", 0, NULL);
     }
 
+    // Reset top process pointers - they may point to freed memory from previous scan
+    top_cpu = top_mem = top_avg = top_io = top_cumulative = top_fds = top_threads = NULL;
+
     // iterator pointers
     ProcessInfo **it = &top_procs, *p = *it;
 
@@ -274,6 +286,10 @@ void top_procs_refresh(void)
             continue;
         ++procs_total;
         ProcessInfo proc = ProcessInfo_scan(pid);
+
+        // Skip processes that couldn't be scanned properly
+        if (proc.pid == 0)
+            continue;
 
         // /proc/stat/[pid] entries seem to be sorted by numeric pid
         // new PIDs are expected to appear at end of the list
