@@ -37,9 +37,12 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
+#include <gdk/gdkx.h>
+#include <X11/Xlib.h>
 
 #define SCALE (1<<15)
 #define RESCALE(scaled, max) ((max*(scaled) + ((scaled)/2)) / SCALE)
@@ -382,12 +385,46 @@ open_website()
 void
 install_screensaver()
 {
-    gchar* cmd = g_strdup_printf(
-        "sh -c \"(echo programs: %s -root;echo mode: _1;echo selected: 0) >> %s/.xscreensaver"
-        " && xscreensaver-command -demo\"", abs_argv0, g_get_home_dir());
-    g_message("%s",cmd);
-    g_spawn_command_line_async(cmd, NULL);
-    g_free(cmd);
+    // Always write to ~/.xscreensaver configuration file
+    gchar* xscreensaver_path = g_build_filename(g_get_home_dir(), ".xscreensaver", NULL);
+    
+    // Read existing content to check if already configured
+    gchar* existing_content = NULL;
+    g_file_get_contents(xscreensaver_path, &existing_content, NULL, NULL);
+    
+    // Check if gatotray is already configured
+    if (!existing_content || !g_strstr_len(existing_content, -1, abs_argv0)) {
+        // Append to file using standard file operations
+        FILE* f = fopen(xscreensaver_path, "a");
+        if (f) {
+            fprintf(f, "\nprograms:\t%s -root\nmode:\t\t_1\nselected:\t0\n", abs_argv0);
+            fclose(f);
+        }
+    }
+    
+    g_free(existing_content);
+    g_free(xscreensaver_path);
+    
+    // Detect desktop environment using case-insensitive search
+    const gchar* desktop = g_getenv("XDG_CURRENT_DESKTOP");
+    const gchar* session = g_getenv("DESKTOP_SESSION");
+    gchar* env_str = g_strdup_printf("%s %s", desktop ? desktop : "", session ? session : "");
+    gchar* env_lower = g_ascii_strdown(env_str, -1);
+    g_free(env_str);
+    
+    // Launch appropriate screensaver preferences tool
+    const gchar* prefs_tool = strstr(env_lower, "mate") ? "mate-screensaver-preferences" :
+                              strstr(env_lower, "xfce") ? "xfce4-screensaver-preferences" : NULL;
+    g_free(env_lower);
+    
+    if (prefs_tool && !g_spawn_command_line_async(prefs_tool, NULL)) {
+        prefs_tool = NULL; // Failed, will try fallback
+    }
+    
+    // Fallback to xscreensaver if desktop-specific tool not available or failed
+    if (!prefs_tool) {
+        g_spawn_command_line_async("xscreensaver-command -demo", NULL);
+    }
 }
 
 GRegex* regex_position;
@@ -460,9 +497,26 @@ main( int argc, char *argv[] )
     const gchar* wid = g_environ_getenv(envp,"XSCREENSAVER_WINDOW");
     if (wid || g_str_has_suffix(argv[0], "xgatotray")
             || (argc>1 && g_str_has_prefix(argv[1], "-root"))) {
-        if (wid)
-            screensaver = gdk_window_foreign_new(g_ascii_strtoull(wid, NULL, 16));
-        else {
+        if (wid) {
+            // Use X11 directly to access the screensaver window
+            // gdk_window_foreign_new() is deprecated and often returns NULL in GTK3+
+            Display *display = GDK_DISPLAY_XDISPLAY(gdk_display_get_default());
+            Window xwindow = g_ascii_strtoull(wid, NULL, 16);
+            
+            // Verify the window exists
+            XWindowAttributes attrs;
+            if (XGetWindowAttributes(display, xwindow, &attrs)) {
+                screensaver = gdk_x11_window_foreign_new_for_display(
+                    gdk_display_get_default(), xwindow);
+                
+                if (!screensaver) {
+                    g_error("Failed to create GDK window for xscreensaver window 0x%lx", (unsigned long)xwindow);
+                }
+            } else {
+                g_error("Xscreensaver window 0x%lx does not exist", (unsigned long)xwindow);
+            }
+        } else {
+            // No XSCREENSAVER_WINDOW but invoked as screensaver - create our own window
             // screensaver = GDK_WINDOW(gdk_get_default_root_window());
             GdkWindowAttr attr = {
                 "xgatotray", 0, 0,0,400,300, GDK_INPUT_OUTPUT,NULL,NULL,GDK_WINDOW_TOPLEVEL
@@ -485,7 +539,7 @@ main( int argc, char *argv[] )
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_FULLSCREEN, NULL);
-        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Use as screensaver");
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Install screensaver");
         g_signal_connect(G_OBJECT (menuitem), "activate", install_screensaver, NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
 
