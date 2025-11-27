@@ -510,10 +510,10 @@ main( int argc, char *argv[] )
                     gdk_display_get_default(), xwindow);
                 
                 if (!screensaver) {
-                    g_error("Failed to create GDK window for xscreensaver window 0x%lx", xwindow);
+                    g_error("Failed to create GDK window for xscreensaver window 0x%lx", (unsigned long)xwindow);
                 }
             } else {
-                g_error("Xscreensaver window 0x%lx does not exist", xwindow);
+                g_error("Xscreensaver window 0x%lx does not exist", (unsigned long)xwindow);
             }
         } else {
             // No XSCREENSAVER_WINDOW but invoked as screensaver - create our own window
