@@ -18,6 +18,8 @@ jobs:
   build:
     # Build on the oldest supported ubuntu:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -32,10 +34,6 @@ jobs:
     - name: Build .deb package
       run: make deb
     
-    - name: Get package filename
-      id: package
-      run: echo "filename=$(ls *.deb)" >> $GITHUB_OUTPUT
-    
     - name: Upload Debian package as artifact
       uses: actions/upload-artifact@v4
       with:
@@ -43,15 +41,10 @@ jobs:
         path: '*.deb'
     
     - name: Upload Debian package to release
-      if: github.event_name == 'release'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      if: github.event_name == 'release' && github.event.action == 'published'
+      uses: softprops/action-gh-release@v2
       with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./${{ steps.package.outputs.filename }}
-        asset_name: ${{ steps.package.outputs.filename }}
-        asset_content_type: application/vnd.debian.binary-package
+        files: '*.deb'
 
   aur-publish:
     runs-on: ubuntu-latest
