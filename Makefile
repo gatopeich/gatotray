@@ -18,7 +18,9 @@
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 4.3.1
+# Extract VERSION from latest git tag (e.g., v4.3.1 -> 4.3.1), fallback to 0.0.0
+VERSION := $(shell git tag -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | head -1 | sed 's/^v//')
+VERSION := $(or $(VERSION),0.0.0)
 REL := $(shell git log -1 --format=%cd --date=format:%Y%m%d || date +%Y%m%d)
 GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 # Version suffix logic:
