@@ -12,6 +12,15 @@ Unported License: http://creativecommons.org/licenses/by/3.0/
 Briefly: Use it however suits you better and just give me due credit.
 
 
+## Installation ##
+
+### Arch Linux (AUR)
+Available on the Arch User Repository: https://aur.archlinux.org/packages/gatotray
+
+### Debian/Ubuntu
+Download the `.deb` package from the [latest release](https://github.com/gatopeich/gatotray/releases/latest).
+
+
 ## Dependencies
 Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-dev`
 
