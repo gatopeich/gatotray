@@ -18,6 +18,8 @@ jobs:
   build:
     # Build on the oldest supported ubuntu:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -32,11 +34,17 @@ jobs:
     - name: Build .deb package
       run: make deb
     
-    - name: Upload Debian package
+    - name: Upload Debian package as artifact
       uses: actions/upload-artifact@v4
       with:
         name: Debian packages
         path: '*.deb'
+    
+    - name: Upload Debian package to release
+      if: github.event_name == 'release' && github.event.action == 'published'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: '*.deb'
 
   aur-publish:
     runs-on: ubuntu-latest
