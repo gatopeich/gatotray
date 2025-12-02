@@ -1,6 +1,6 @@
 # Maintainer: gatopeich <gatopeich@pm.me>
 pkgname=gatotray
-pkgver=4.1
+pkgver=4.3.1
 pkgrel=20250228
 pkgdesc="A lightweight graphical system monitor for the desktop tray"
 arch=('x86_64')

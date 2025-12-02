@@ -5,6 +5,10 @@
 #  Briefly: Use it however suits you better and just give me due credit.
 #
 ### Changelog:
+# V4.3.1: Trigger CI build on release
+# V4.3.0: Temperature sensor selection improvements
+# V4.2.1: Bug fixes
+# V4.2.0: UI improvements
 # V4.1: Security fixes
 # V4.0: Track top resource consuming processes
 # V3.3: Add free memory chart (from proc/meminfo)
@@ -14,9 +18,23 @@
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 4.1
+VERSION := 4.3.1
 REL := $(shell git log -1 --format=%cd --date=format:%Y%m%d || date +%Y%m%d)
-CFLAGS := -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION).$(REL)\" $(CFLAGS) -Wno-deprecated-declarations
+GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+# Version suffix logic:
+# - Release builds in GitHub CI: no suffix (clean version)
+# - Non-release builds in GitHub CI: add git hash to distinguish from releases
+# - Builds outside GitHub CI: add "unofficial" marker and git hash
+ifeq ($(GITHUB_ACTIONS),true)
+  ifeq ($(GITHUB_EVENT_NAME),release)
+    VERSION_SUFFIX :=
+  else
+    VERSION_SUFFIX := -$(GIT_HASH)
+  endif
+else
+  VERSION_SUFFIX := -unofficial-$(GIT_HASH)
+endif
+CFLAGS := -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION).$(REL)$(VERSION_SUFFIX)\" $(CFLAGS) -Wno-deprecated-declarations
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
 LDLIBS := `pkg-config --libs gtk+-2.0` -lX11 $(LDLIBS)
 
