@@ -1,0 +1,62 @@
+# Workflow triggered when version tags are pushed
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 1  # Shallow clone
+        fetch-tags: true  # Fetch tags for version extraction
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install libgtk2.0-dev libprocps-dev
+
+    - name: Build .deb package
+      run: make deb
+    
+    - name: Upload Debian package as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Debian packages
+        path: '*.deb'
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: '*.deb'
+        draft: false
+        prerelease: false
+
+  aur-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 1  # Shallow clone
+          fetch-tags: true  # Fetch tags for version extraction
+
+      - name: Generate PKGBUILD
+        run: make PKGBUILD
+
+      - name: Publish AUR package
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: gatotray
+          pkgbuild: ./PKGBUILD
+          commit_username: gatopeich
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          ssh_keyscan_types: rsa,ecdsa,ed25519
+          test: false
