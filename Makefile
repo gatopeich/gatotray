@@ -14,7 +14,7 @@
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 4.1
+VERSION := 4.3.2
 REL := $(shell git log -1 --format=%cd --date=format:%Y%m%d || date +%Y%m%d)
 CFLAGS := -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION).$(REL)\" $(CFLAGS) -Wno-deprecated-declarations
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
