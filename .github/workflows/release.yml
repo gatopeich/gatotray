@@ -13,10 +13,9 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
-        fetch-depth: 1  # Shallow clone
-        fetch-tags: true  # Fetch tags for version extraction
+        fetch-depth: 0  # Fetch all history and tags for version extraction
 
     - name: Install dependencies
       run: |
@@ -42,10 +41,9 @@ jobs:
   aur-publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # Shallow clone
-          fetch-tags: true  # Fetch tags for version extraction
+          fetch-depth: 0  # Fetch all history and tags for version extraction
 
       - name: Generate PKGBUILD
         run: make PKGBUILD

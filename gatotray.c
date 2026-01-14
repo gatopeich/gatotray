@@ -131,6 +131,7 @@ void redraw(void)
         cairo_pattern_add_color_stop_rgba(pattern, h, r,g,b, 0.7);
         cairo_set_source(cr, pattern);
         cairo_fill(cr);
+        cairo_pattern_destroy(pattern);
 
         // Draw CPU usage filled path, pattern-colored by frequency
         cairo_move_to(cr, 0, h-1);
@@ -149,6 +150,7 @@ void redraw(void)
         cairo_stroke_preserve(cr);
         cairo_set_source(cr, pattern);
         cairo_fill(cr);
+        cairo_pattern_destroy(pattern);
 
         // Draw I/O wait on top of usage
         cairo_move_to(cr, 0, h-1);
@@ -362,7 +364,8 @@ timeout_cb (gpointer data)
         last_tooltip_update = now;
     }
 
-    redraw();
+    if (!screensaver || gdk_window_is_viewable(screensaver))
+        redraw();
 
     // Save history every minute (60 seconds)
     static time_t save_time = 0;
