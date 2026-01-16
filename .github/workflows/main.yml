@@ -24,7 +24,10 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1  # Shallow clone
+        fetch-tags: true  # Fetch tags for version extraction
 
     - name: Install dependencies
       run: |
@@ -46,23 +49,3 @@ jobs:
       with:
         files: '*.deb'
 
-  aur-publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: Generate PKGBUILD
-        run: make PKGBUILD
-
-      - name: Publish AUR package
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
-        with:
-          pkgname: gatotray
-          pkgbuild: ./PKGBUILD
-          commit_username: gatopeich
-          commit_email: ${{ secrets.AUR_EMAIL }}
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          ssh_keyscan_types: rsa,ecdsa,ed25519
-          test: false
-          # test_flags: --clean --syncdeps
-          # post_process: gatotray || echo "Should fail by lack of DISPLAY"
