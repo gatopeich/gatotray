@@ -15,7 +15,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Fetch all history and tags for version extraction
+        fetch-depth: 1  # Shallow clone
+        fetch-tags: true  # Fetch tags for version extraction
 
     - name: Install dependencies
       run: |
@@ -43,7 +44,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history and tags for version extraction
+          fetch-depth: 1  # Shallow clone
+          fetch-tags: true  # Fetch tags for version extraction
 
       - name: Generate PKGBUILD
         run: make PKGBUILD
