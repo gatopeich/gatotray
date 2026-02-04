@@ -117,10 +117,7 @@ static const char* tracking_params[] = {
     "vero_id",
     "vero_conv",
     
-    // Common tracking (specific patterns only, avoiding generic terms)
-    "trk",
-    "tracking",
-    "affiliate",
+    // Common tracking (only specific prefixed patterns)
     "aff_id",
     "click_id",
     "clickid",
@@ -171,6 +168,7 @@ char* clean_url(const char* url) {
     size_t len = strlen(url);
     char* result = malloc(len + 1);
     if (!result) {
+        fprintf(stderr, "Error: Memory allocation failed\n");
         return NULL;
     }
     
@@ -434,6 +432,7 @@ int main(int argc, char* argv[]) {
         if (write_clipboard(cleaned) == 0) {
             printf("Cleaned URL copied to clipboard:\n%s\n", cleaned);
         } else {
+            fprintf(stderr, "Warning: Could not write to clipboard. Printing to stdout instead.\n");
             printf("%s\n", cleaned);
         }
     } else {
