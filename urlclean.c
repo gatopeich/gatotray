@@ -136,7 +136,6 @@ static const char* tracking_params[] = {
     "tag",
     "linkCode",
     "linkId",
-    "ref_",
     "pf_rd_r",
     "pf_rd_p",
     "pd_rd_r",
@@ -275,7 +274,8 @@ static char* read_stdin(void) {
     int c;
     
     while ((c = getchar()) != EOF) {
-        if (size >= capacity) {
+        // Ensure space for character plus null terminator
+        if (size + 1 >= capacity) {
             capacity = capacity ? capacity * 2 : 256;
             char* new_buffer = realloc(buffer, capacity);
             if (!new_buffer) {
@@ -288,6 +288,7 @@ static char* read_stdin(void) {
     }
     
     if (buffer) {
+        buffer[size] = '\0';  // Null terminate before trimming
         // Trim whitespace
         while (size > 0 && isspace((unsigned char)buffer[size - 1])) {
             size--;
@@ -311,7 +312,8 @@ static char* read_clipboard(void) {
     int c;
     
     while ((c = fgetc(pipe)) != EOF) {
-        if (size >= capacity) {
+        // Ensure space for character plus null terminator
+        if (size + 1 >= capacity) {
             capacity = capacity ? capacity * 2 : 256;
             char* new_buffer = realloc(buffer, capacity);
             if (!new_buffer) {
@@ -327,6 +329,7 @@ static char* read_clipboard(void) {
     int status = pclose(pipe);
     
     if (buffer) {
+        buffer[size] = '\0';  // Null terminate before trimming
         // Trim whitespace
         while (size > 0 && isspace((unsigned char)buffer[size - 1])) {
             size--;
