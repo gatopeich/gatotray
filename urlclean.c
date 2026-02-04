@@ -159,7 +159,7 @@ static int is_tracking_param(const char* param, size_t len) {
 }
 
 // Clean a URL by removing tracking parameters
-// Returns a newly allocated string (caller must free)
+// Returns a newly allocated string (caller must free), or NULL on memory allocation failure
 char* clean_url(const char* url) {
     if (!url || !*url) {
         return strdup("");
