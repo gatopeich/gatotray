@@ -260,7 +260,8 @@ static char* read_stdin(void) {
     int c;
     
     while ((c = getchar()) != EOF) {
-        // Ensure space for character plus null terminator
+        // Ensure space for character (at buffer[size]) plus null terminator (at buffer[size+1])
+        // Equivalently: need size + 2 <= capacity, so realloc when size + 1 >= capacity
         if (size + 1 >= capacity) {
             capacity = capacity ? capacity * 2 : 256;
             char* new_buffer = realloc(buffer, capacity);
@@ -298,7 +299,8 @@ static char* read_clipboard(void) {
     int c;
     
     while ((c = fgetc(pipe)) != EOF) {
-        // Ensure space for character plus null terminator
+        // Ensure space for character (at buffer[size]) plus null terminator (at buffer[size+1])
+        // Equivalently: need size + 2 <= capacity, so realloc when size + 1 >= capacity
         if (size + 1 >= capacity) {
             capacity = capacity ? capacity * 2 : 256;
             char* new_buffer = realloc(buffer, capacity);
