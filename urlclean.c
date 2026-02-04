@@ -125,8 +125,7 @@ static const char* tracking_params[] = {
     "click_id",
     "clickid",
     
-    // Amazon
-    "tag",
+    // Amazon (specific tracking params only, 'tag' excluded as too generic)
     "linkCode",
     "linkId",
     "pf_rd_r",
@@ -137,10 +136,6 @@ static const char* tracking_params[] = {
     "pf_rd_t",
     "pf_rd_i",
     "pd_rd_wg",
-    
-    // Spotify
-    "si",
-    "context",
     
     // Reddit
     "share_id",
