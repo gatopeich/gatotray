@@ -24,6 +24,8 @@ Download the `.deb` package from the [latest release](https://github.com/gatopei
 ## Dependencies
 Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-dev`
 
+For the `urlclean` utility, `xclip` is optional but needed for clipboard integration: `sudo apt install xclip`
+
 
 ## Features ##
 
@@ -58,6 +60,48 @@ Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-de
 
 * History persistence: gatotray automatically saves CPU, memory, and temperature history every minute to `/tmp/gatotray-history.bin`, ensuring that meaningful data is displayed immediately when the application restarts during the same session (especially useful for the screensaver mode).
 
+
+---
+
+# urlclean #
+
+`urlclean` is a lightweight URL cleaner to remove tracking parameters.
+Inspired by [Léon - The URL Cleaner](https://github.com/svenjacobs/leon) Android app.
+
+## Usage ##
+
+```bash
+# Clean a URL from command line
+urlclean 'https://example.com/page?utm_source=test&id=123'
+# Output: https://example.com/page?id=123
+
+# Clean a URL from stdin
+echo 'https://example.com?fbclid=abc123' | urlclean
+
+# Clean URL from clipboard (requires xclip)
+urlclean -c
+
+# List all removed tracking parameters
+urlclean -l
+```
+
+## Features ##
+
+* Removes common tracking parameters:
+  - Google Analytics (utm_source, utm_medium, utm_campaign, etc.)
+  - Facebook (fbclid, fb_ref, etc.)
+  - Twitter/X (twclid)
+  - Microsoft/Bing (msclkid)
+  - Google Ads (gclid, gclsrc, dclid)
+  - And many more (Instagram, TikTok, Pinterest, Amazon, etc.)
+
+* Preserves URL fragments (#anchors)
+
+* Clipboard integration with xclip
+
+* Tiny footprint with no dependencies (except optional xclip)
+
+---
 
 ## Configuration ##
 

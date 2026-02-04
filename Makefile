@@ -22,17 +22,20 @@ LDLIBS := `pkg-config --libs gtk+-2.0` -lX11 $(LDLIBS)
 
 $(warn $(DESTDIR))
 
-targets := gatotray
+targets := gatotray urlclean
 
 all: $(targets)
 
 gatotray: gatotray.o
 
+urlclean: urlclean.c
+	$(CC) -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION).$(REL)\" -o $@ $<
+
 gatotray.i386: gatotray.o.i386
 	$(LD) -m32 -o $@ $^ $(LDLIBS)
 
-install: gatotray gatotray.xpm gatotray.desktop gatotray-screensaver.desktop
-	install -svDt $(DESTDIR)/usr/bin/ gatotray
+install: gatotray urlclean gatotray.xpm gatotray.desktop gatotray-screensaver.desktop
+	install -svDt $(DESTDIR)/usr/bin/ gatotray urlclean
 	install -vDt $(DESTDIR)/usr/share/icons/ gatotray.xpm
 	install -vDt $(DESTDIR)/usr/share/applications/ gatotray.desktop
 	install -vDt $(DESTDIR)/usr/share/applications/screensavers/ gatotray-screensaver.desktop
