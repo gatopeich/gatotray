@@ -49,7 +49,6 @@ static const char* tracking_params[] = {
     
     // Twitter/X
     "twclid",
-    "s", // Twitter share parameter
     
     // Microsoft/Bing
     "msclkid",
@@ -118,17 +117,11 @@ static const char* tracking_params[] = {
     "vero_id",
     "vero_conv",
     
-    // Common tracking
-    "ref",
-    "ref_",
-    "referrer",
-    "source",
-    "src",
+    // Common tracking (specific patterns only, avoiding generic terms)
     "trk",
     "tracking",
     "affiliate",
     "aff_id",
-    "campaign",
     "click_id",
     "clickid",
     
