@@ -1,0 +1,30 @@
+# Copilot coding agent setup workflow
+# Configures the environment for GitHub Copilot coding agent sessions
+
+name: "Copilot Setup Steps"
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # Allow web search access through the firewall
+      COPILOT_AGENT_FIREWALL_ALLOW_LIST_ADDITIONS: bing.com,www.bing.com
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk2.0-dev libprocps-dev
