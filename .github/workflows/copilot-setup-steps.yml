@@ -18,8 +18,8 @@ jobs:
     permissions:
       contents: read
     env:
-      # Allow web search access through the firewall
-      COPILOT_AGENT_FIREWALL_ALLOW_LIST_ADDITIONS: bing.com,www.bing.com
+      # Allow web search and Android documentation access through the firewall
+      COPILOT_AGENT_FIREWALL_ALLOW_LIST_ADDITIONS: bing.com,www.bing.com,developer.android.com,source.android.com
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
