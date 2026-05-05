@@ -69,6 +69,12 @@ typedef struct {
 
 CPUstatus* history = NULL;
 
+// Separate net bandwidth history (raw values, circular buffer)
+typedef struct { int rx_kbps, tx_kbps; } NetSample;
+NetSample* net_history = NULL;
+int net_hist_pos = 0;  // write position in circular buffer
+int net_max_kbps = 1;  // running max for scaling (at least 1 to avoid div by 0)
+
 int width = 0, hist_size = 0, timer = 0;
 
 GdkPixmap *pixmap = NULL;
@@ -165,6 +171,34 @@ void redraw(void)
         cairo_set_source_rgba(cr, _1*iow_color.red, _1*iow_color.green, _1*iow_color.blue, 0.5);
         cairo_fill(cr);
 
+        // Network bandwidth bars centered at mid-height
+        float mid = h / 2.0;
+        // Uplink (TX): green bars growing upward from center
+        cairo_move_to(cr, 0, mid);
+        for (int x = 0; x < width; x++) {
+            float bar = net_history[width-1-x].tx_kbps * mid / net_max_kbps;
+            if (bar > mid) bar = mid;
+            cairo_line_to(cr, x * d_w, mid - bar);
+        }
+        cairo_rel_line_to(cr, d_w-1, 0);
+        cairo_line_to(cr, w-1, mid);
+        cairo_close_path(cr);
+        cairo_set_source_rgba(cr, 0.25, 0.88, 0.25, 0.5);
+        cairo_fill(cr);
+
+        // Downlink (RX): cyan bars growing downward from center
+        cairo_move_to(cr, 0, mid);
+        for (int x = 0; x < width; x++) {
+            float bar = net_history[width-1-x].rx_kbps * mid / net_max_kbps;
+            if (bar > mid) bar = mid;
+            cairo_line_to(cr, x * d_w, mid + bar);
+        }
+        cairo_rel_line_to(cr, d_w-1, 0);
+        cairo_line_to(cr, w-1, mid);
+        cairo_close_path(cr);
+        cairo_set_source_rgba(cr, 0.12, 0.63, 0.88, 0.5);
+        cairo_fill(cr);
+
         PangoContext *pango = pango_cairo_create_context(cr);
         PangoLayout *pl = pango_layout_new (pango);
         pango_layout_set_width (pl, w * PANGO_SCALE);
@@ -208,6 +242,29 @@ void redraw(void)
 
             gdk_gc_set_rgb_fg_color(gc, shade);
             gdk_draw_line(pixmap, gc, x, bottom-RESCALE(h->cpu.usage,height), x, bottom);
+
+            // Network bandwidth bars centered at mid-height
+            NetSample* ns = &net_history[width-1-x];
+            int mid = height / 2;
+            int half = height / 2;
+            if (ns->tx_kbps) {
+                int bar = ns->tx_kbps * half / net_max_kbps;
+                if (bar > half) bar = half;
+                if (bar > 0) {
+                    static GdkColor net_tx_color = {0, 0x4000, 0xE000, 0x4000};
+                    gdk_gc_set_rgb_fg_color(gc, &net_tx_color);
+                    gdk_draw_line(pixmap, gc, x, mid - bar, x, mid);
+                }
+            }
+            if (ns->rx_kbps) {
+                int bar = ns->rx_kbps * half / net_max_kbps;
+                if (bar > half) bar = half;
+                if (bar > 0) {
+                    static GdkColor net_rx_color = {0, 0x2000, 0xA000, 0xE000};
+                    gdk_gc_set_rgb_fg_color(gc, &net_rx_color);
+                    gdk_draw_line(pixmap, gc, x, mid, x, mid + bar);
+                }
+            }
         }
 
         int T;
@@ -246,8 +303,11 @@ resize_cb(GtkStatusIcon *app_icon, gint newsize, gpointer user_data)
 {
     if(newsize > hist_size) {
         history = g_realloc(history, newsize*sizeof(*history));
-        for(int i=hist_size; i<newsize; i++)
+        net_history = g_realloc(net_history, newsize*sizeof(*net_history));
+        for(int i=hist_size; i<newsize; i++) {
             history[i] = history[hist_size-1];
+            net_history[i] = (NetSample){0, 0};
+        }
         hist_size = newsize;
     }
     width = newsize;
@@ -330,6 +390,20 @@ timeout_cb (gpointer data)
         #undef blend
     }
     MemInfo meminfo = update_history();
+
+    // Shift net history and insert current sample
+    for (int i = hist_size - 1; i > 0; i--)
+        net_history[i] = net_history[i-1];
+    net_history[0].rx_kbps = net_rx_kbps;
+    net_history[0].tx_kbps = net_tx_kbps;
+
+    // Update running max across visible history (decays as old peaks scroll out)
+    net_max_kbps = 1;
+    for (int i = 0; i < width; i++) {
+        if (net_history[i].rx_kbps > net_max_kbps) net_max_kbps = net_history[i].rx_kbps;
+        if (net_history[i].tx_kbps > net_max_kbps) net_max_kbps = net_history[i].tx_kbps;
+    }
+
     top_procs_refresh();
 
     if (!info_text)
@@ -493,6 +567,7 @@ main( int argc, char *argv[] )
     pref_init();
 
     history = g_malloc(sizeof(*history));
+    net_history = g_malloc0(sizeof(*net_history));
     hist_size = width = 1;
     update_history();
     
