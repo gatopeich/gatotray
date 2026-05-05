@@ -57,10 +57,10 @@ static unsigned read_thread_count(const char* pid)
 typedef unsigned long long ULL;
 typedef struct ProcessInfo {
     struct ProcessInfo* next; // embedded single linked list
-    unsigned pid, rss, fd_count, thread_count;
+    unsigned pid, rss, fd_count, socket_count, thread_count;
     ULL cpu_time, io_time, sample_time;
     float cpu, io_wait, average_cpu;
-    int net_rx_kbps, net_tx_kbps;
+    int net_rx_KBps, net_tx_KBps;
     unsigned min_rtt_us;
     char comm[32];
 } ProcessInfo;
@@ -68,24 +68,21 @@ typedef struct ProcessInfo {
 int procs_total=0, procs_active=0;
 ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
     , *top_cumulative=NULL, *top_fds=NULL, *top_threads=NULL
-    , *top_net=NULL, *procs_self=NULL;
+    , *top_net=NULL, *top_sockets=NULL, *procs_self=NULL;
 
-// Helper macro to format small values as 0 for cleaner display
 #define max2decs(g) (g>.005?g:.0)
 
 void ProcessInfo_to_GString(ProcessInfo* p, GString* out)
 {
     float gb = p->rss * PAGE_GB();
-    g_string_append_printf(out, "%s: %.2g%%cpu %.2g%%avg %.2g%%io 💾%.2ggb 📂%d 🧵%d",
-        p->comm, max2decs(p->cpu), max2decs(p->average_cpu), p->io_wait, gb,
-        p->fd_count, p->thread_count);
-    if (p->net_rx_kbps || p->net_tx_kbps) {
-        if (p->net_rx_kbps > 1024 || p->net_tx_kbps > 1024)
-            g_string_append_printf(out, " ↓%.1fMB/s↑%.1fMB/s",
-                p->net_rx_kbps/1024.0, p->net_tx_kbps/1024.0);
-        else
-            g_string_append_printf(out, " ↓%dkB/s↑%dkB/s", p->net_rx_kbps, p->net_tx_kbps);
-    }
+    const char* cpu_icon = p->cpu > CPU_HIGH_THRESHOLD ? "📈" : "📉";
+    const char* io_icon = p->io_wait < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
+    g_string_append_printf(out, "%s: %s%.2g%%cpu %.2g%%avg %s%.2g%%io 💾%.2ggb 📂%d 🔌%d 🧵%d",
+        p->comm, cpu_icon, max2decs(p->cpu), max2decs(p->average_cpu), io_icon, p->io_wait, gb,
+        p->fd_count, p->socket_count, p->thread_count);
+    if (p->net_rx_KBps || p->net_tx_KBps)
+        g_string_append_printf(out, " ↓%d↑%dKB/s",
+            p->net_rx_KBps, p->net_tx_KBps);
     if (p->min_rtt_us)
         g_string_append_printf(out, " RTT:%.1fms", p->min_rtt_us / 1000.0);
     g_string_append_printf(out, " (%d)", p->pid);
@@ -115,21 +112,28 @@ void top_procs_append_summary(GString* summary)
             g_string_append(summary, "\n🧠 ");
             ProcessInfo_to_GString(top_mem, summary);
         }
-        if (top_net && (top_net->net_rx_kbps || top_net->net_tx_kbps)
+        if (top_net && (top_net->net_rx_KBps || top_net->net_tx_KBps)
                 && top_net != top_cpu && top_net != top_avg && top_net != top_cumulative
                 && top_net != top_io && top_net != top_mem) {
             g_string_append(summary, "\n🌐 ");
             ProcessInfo_to_GString(top_net, summary);
         }
+        if (top_sockets && top_sockets->socket_count
+                && top_sockets != top_net && top_sockets != top_cpu && top_sockets != top_avg
+                && top_sockets != top_cumulative && top_sockets != top_io && top_sockets != top_mem) {
+            g_string_append(summary, "\n🔌 ");
+            ProcessInfo_to_GString(top_sockets, summary);
+        }
         if (top_fds && top_fds != top_mem && top_fds != top_io
                 && top_fds != top_cumulative && top_fds != top_avg && top_fds != top_cpu
-                && top_fds != top_net) {
+                && top_fds != top_net && top_fds != top_sockets) {
             g_string_append(summary, "\n📂 ");
             ProcessInfo_to_GString(top_fds, summary);
         }
         if (top_threads && top_threads != top_fds && top_threads != top_mem
                 && top_threads != top_io && top_threads != top_cumulative
-                && top_threads != top_avg && top_threads != top_cpu && top_threads != top_net) {
+                && top_threads != top_avg && top_threads != top_cpu
+                && top_threads != top_net && top_threads != top_sockets) {
             g_string_append(summary, "\n🧵 ");
             ProcessInfo_to_GString(top_threads, summary);
         }
@@ -231,7 +235,7 @@ void top_procs_refresh(void)
     }
 
     // Reset top process pointers
-    top_cpu = top_mem = top_avg = top_io = top_cumulative = top_fds = top_threads = top_net = NULL;
+    top_cpu = top_mem = top_avg = top_io = top_cumulative = top_fds = top_threads = top_net = top_sockets = NULL;
 
     // iterator pointers
     ProcessInfo **it = &top_procs, *p = *it;
@@ -276,17 +280,16 @@ void top_procs_refresh(void)
                 procs_self = p;
         }
 
-        // Collect socket inodes and get actual fd count in one pass
-        p->fd_count = net_collect_pid_sockets(pid, p->pid);
-
-        // Update net stats from aggregated data
+        int sock_count;
+        p->fd_count = net_collect_pid_sockets(pid, p->pid, &sock_count);
+        p->socket_count = sock_count;
         ProcNetStat* ns = net_stat_by_pid(p->pid);
         if (ns) {
-            p->net_rx_kbps = ns->rx_kbps;
-            p->net_tx_kbps = ns->tx_kbps;
+            p->net_rx_KBps = ns->rx_KBps;
+            p->net_tx_KBps = ns->tx_KBps;
             p->min_rtt_us = ns->min_rtt_us;
         } else {
-            p->net_rx_kbps = p->net_tx_kbps = 0;
+            p->net_rx_KBps = p->net_tx_KBps = 0;
             p->min_rtt_us = 0;
         }
 
@@ -304,11 +307,12 @@ void top_procs_refresh(void)
             top_fds = p;
         if (!top_threads || proc.thread_count > top_threads->thread_count)
             top_threads = p;
-        if (!top_net || (p->net_rx_kbps + p->net_tx_kbps) > (top_net->net_rx_kbps + top_net->net_tx_kbps))
+        if (!top_net || (p->net_rx_KBps + p->net_tx_KBps) > (top_net->net_rx_KBps + top_net->net_tx_KBps))
             top_net = p;
+        if (!top_sockets || p->socket_count > top_sockets->socket_count)
+            top_sockets = p;
 
         p = *(it = &(p->next));
     }
-    // Aggregate this cycle's inode_map × sock_stats for next cycle's per-process rates
-    net_stats_finish(elapsed_ms);
+    net_stats_aggregate(elapsed_ms);
 }

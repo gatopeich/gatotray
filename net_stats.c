@@ -1,5 +1,4 @@
 // Network statistics: per-interface bandwidth, per-process TCP bandwidth & RTT
-// Uses /proc/net/dev for interface stats, NETLINK_INET_DIAG for per-socket tcp_info
 
 #include <linux/netlink.h>
 #include <linux/inet_diag.h>
@@ -16,13 +15,10 @@
 #define g_debug(...) do{}while(0)
 #endif
 
-// === Section 1: System-wide interface bandwidth from /proc/net/dev ===
-
 typedef struct { char name[16]; u64 rx, tx; } IfaceStat;
 static IfaceStat iface_prev[8];
 static int n_ifaces = 0;
-static int net_first_sample = 1;
-int net_rx_kbps = 0, net_tx_kbps = 0;
+int net_rx_KBps = 0, net_tx_KBps = 0;
 
 static void net_dev_refresh(int elapsed_ms)
 {
@@ -33,7 +29,6 @@ static void net_dev_refresh(int elapsed_ms)
     fflush(f);
 
     char line[256];
-    // Skip 2 header lines
     if (!fgets(line, sizeof(line), f)) return;
     if (!fgets(line, sizeof(line), f)) return;
 
@@ -51,7 +46,6 @@ static void net_dev_refresh(int elapsed_ms)
         memcpy(current[n].name, p, namelen);
         current[n].name[namelen] = '\0';
 
-        // Skip loopback
         if (strcmp(current[n].name, "lo") == 0) continue;
 
         u64 rx, tx;
@@ -60,8 +54,7 @@ static void net_dev_refresh(int elapsed_ms)
         current[n].rx = rx;
         current[n].tx = tx;
 
-        if (!net_first_sample && elapsed_ms > 0) {
-            // Find matching previous entry
+        if (n_ifaces && elapsed_ms > 0) {
             for (int i = 0; i < n_ifaces; i++) {
                 if (strcmp(iface_prev[i].name, current[n].name) == 0) {
                     u64 drx = rx - iface_prev[i].rx;
@@ -77,12 +70,9 @@ static void net_dev_refresh(int elapsed_ms)
 
     memcpy(iface_prev, current, n * sizeof(IfaceStat));
     n_ifaces = n;
-    net_rx_kbps = total_rx;
-    net_tx_kbps = total_tx;
-    net_first_sample = 0;
+    net_rx_KBps = total_rx;
+    net_tx_KBps = total_tx;
 }
-
-// === Section 2: INET_DIAG query for per-socket stats ===
 
 #define MAX_SOCKETS 4096
 
@@ -96,10 +86,9 @@ typedef struct {
 static SockStat sock_stats[MAX_SOCKETS];
 static int n_socks = 0;
 
-// Simple hash table: inode → index in sock_stats[]
 #define SOCK_HASH_SIZE 8192
 #define SOCK_HASH_MASK (SOCK_HASH_SIZE - 1)
-static int sock_hash[SOCK_HASH_SIZE]; // -1 = empty, else index into sock_stats
+static int sock_hash[SOCK_HASH_SIZE];
 
 static void sock_hash_clear(void)
 {
@@ -167,7 +156,6 @@ static void inet_diag_query(int fd, int family)
             ss->bytes_acked = 0;
             ss->bytes_received = 0;
 
-            // Parse INET_DIAG_INFO attribute for tcp_info
             unsigned int attrlen = nlh->nlmsg_len - NLMSG_LENGTH(sizeof(*diag));
             struct rtattr* attr = (struct rtattr*)(diag + 1);
             for (; RTA_OK(attr, attrlen); attr = RTA_NEXT(attr, attrlen)) {
@@ -204,23 +192,21 @@ static void inet_diag_refresh(void)
     g_debug("inet_diag: %d sockets", n_socks);
 }
 
-// === Section 3: Inode→PID map (filled by top_procs via net_collect_pid_sockets) ===
-
 #define MAX_INODE_MAP 8192
 
 typedef struct { uint32_t inode; unsigned pid; } InodePid;
 static InodePid inode_map[MAX_INODE_MAP];
 static int n_inode_map = 0;
 
-// Called by top_procs_refresh() for each PID. Returns fd_count.
-static int net_collect_pid_sockets(const char* pid_str, unsigned pid)
+// Returns fd_count, sets *socket_count
+static int net_collect_pid_sockets(const char* pid_str, unsigned pid, int* socket_count)
 {
     char path[64];
     snprintf(path, sizeof(path), "/proc/%s/fd", pid_str);
     DIR* dir = opendir(path);
-    if (!dir) return 0;
+    if (!dir) { *socket_count = 0; return 0; }
 
-    int fd_count = 0;
+    int fd_count = 0, socks = 0;
     struct dirent* ent;
     while ((ent = readdir(dir))) {
         if (ent->d_name[0] < '0' || ent->d_name[0] > '9') continue;
@@ -235,29 +221,28 @@ static int net_collect_pid_sockets(const char* pid_str, unsigned pid)
         if (tlen <= 0) continue;
         target[tlen] = '\0';
 
-        // Parse "socket:[inode]"
         if (strncmp(target, "socket:[", 8) != 0) continue;
         uint32_t inode = strtoul(target + 8, NULL, 10);
         if (!inode) continue;
 
+        socks++;
         inode_map[n_inode_map].inode = inode;
         inode_map[n_inode_map].pid = pid;
         n_inode_map++;
     }
     closedir(dir);
+    *socket_count = socks;
     return fd_count;
 }
 
 static void net_inode_map_clear(void) { n_inode_map = 0; }
-
-// === Section 4: Per-process net stats aggregation ===
 
 #define MAX_NET_PROCS 512
 
 typedef struct {
     unsigned pid;
     uint64_t prev_acked, prev_received;
-    int rx_kbps, tx_kbps;
+    int rx_KBps, tx_KBps;
     unsigned min_rtt_us;
 } ProcNetStat;
 
@@ -315,10 +300,10 @@ static void net_stats_aggregate(int elapsed_ms)
         if (prev && elapsed_ms > 0 && aggs[i].received >= prev->prev_received) {
             uint64_t drx = aggs[i].received - prev->prev_received;
             uint64_t dtx = aggs[i].acked - prev->prev_acked;
-            ns->rx_kbps = (int)(drx * 1000 / elapsed_ms / 1024);
-            ns->tx_kbps = (int)(dtx * 1000 / elapsed_ms / 1024);
+            ns->rx_KBps = (int)(drx * 1000 / elapsed_ms / 1024);
+            ns->tx_KBps = (int)(dtx * 1000 / elapsed_ms / 1024);
         } else {
-            ns->rx_kbps = ns->tx_kbps = 0;
+            ns->rx_KBps = ns->tx_KBps = 0;
         }
         ns->prev_acked = aggs[i].acked;
         ns->prev_received = aggs[i].received;
@@ -328,27 +313,14 @@ static void net_stats_aggregate(int elapsed_ms)
     n_proc_net = n_new;
 }
 
-// Called before top_procs_refresh() to query socket stats from kernel
 static void net_stats_refresh(int elapsed_ms)
 {
     net_dev_refresh(elapsed_ms);
     inet_diag_refresh();
 }
 
-// Called after top_procs_refresh() has populated inode_map
-static void net_stats_finish(int elapsed_ms)
-{
-    net_stats_aggregate(elapsed_ms);
-}
-
 static void net_stats_append_summary(GString* out)
 {
-    if (net_rx_kbps || net_tx_kbps) {
-        if (net_rx_kbps > 1024 || net_tx_kbps > 1024)
-            g_string_append_printf(out, "\nNet ↓%.1f MB/s ↑%.1f MB/s",
-                net_rx_kbps / 1024.0, net_tx_kbps / 1024.0);
-        else
-            g_string_append_printf(out, "\nNet ↓%d kB/s ↑%d kB/s",
-                net_rx_kbps, net_tx_kbps);
-    }
+    g_string_append_printf(out, "\n🌐  Network ↓%d ↑%d KB/s",
+        net_rx_KBps, net_tx_KBps);
 }
