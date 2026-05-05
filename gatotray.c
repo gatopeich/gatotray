@@ -31,7 +31,7 @@
  *
  */
 
-#define _XOPEN_SOURCE
+#define _XOPEN_SOURCE 500
 #include <sys/types.h>
 #include <signal.h>
 #include <string.h>
@@ -55,6 +55,7 @@
 
 // TODO: Include headers instead of full modules
 #include "cpu_usage.c"
+#include "net_stats.c"
 #include "settings.c"
 #include "top_procs.c"
 #include "gatotray.xpm"
@@ -353,7 +354,9 @@ timeout_cb (gpointer data)
             , RESCALE(history[0].free_memory, meminfo.Total_MB), meminfo.Total_MB);
 
     if (history[0].temp)
-        g_string_append_printf (info_text, ". 🌡️  Temperature: %d°C\n", history[0].temp);
+        g_string_append_printf (info_text, ". 🌡️  Temperature: %d°C", history[0].temp);
+
+    net_stats_append_summary(info_text);
 
     top_procs_append_summary(info_text);
 
