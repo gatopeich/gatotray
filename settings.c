@@ -27,7 +27,7 @@ PrefBoolean pref_booleans[] = {
     { "Transparent background", &pref_transparent },
 };
 
-GdkColor mem_color, fg_color, bg_color, iow_color;
+GdkColor mem_color, fg_color, bg_color, iow_color, net_tx_color, net_rx_color;
 #define SHADES 100
 #define MAX_SHADE (SHADES-1)
 GdkColor temp_min_color, temp_max_color, temp_gradient[SHADES];
@@ -42,6 +42,8 @@ PrefColor pref_colors[] = {
     { "Foreground", "black", &fg_color },
     { "Background", "white", &bg_color },
     { "I/O wait (bottom)", "blue", &iow_color },
+    { "Network uplink",   "#E08000", &net_tx_color },
+    { "Network downlink", "#E0E000", &net_rx_color },
     { "Min frequency", "green", &freq_min_color },
     { "Max frequency", "red", &freq_max_color },
     { "Min temperature", "blue", &temp_min_color },
@@ -50,6 +52,7 @@ PrefColor pref_colors[] = {
 
 gint refresh_interval_ms = 1000;
 gint top_refresh_ms = 3000;
+gint heavy_refresh_ms = 10000;
 gint pref_temp_alarm = 85;
 typedef struct {
     const gchar* description;
@@ -62,6 +65,7 @@ typedef struct {
 PrefRangeval pref_rangevals[] = {
     { "Basic refresh interval (ms)", &refresh_interval_ms, 100, 100000 },
     { "Top refresh interval (ms)", &top_refresh_ms, 100, 100000 },
+    { "Heavy refresh interval (ms)", &heavy_refresh_ms, 100, 600000 },
     { "High temperature alarm", &pref_temp_alarm, 30, 100, &pref_thermometer },
 };
 
@@ -76,6 +80,21 @@ typedef struct {
 } PrefString;
 PrefString pref_strings[] = {
     { "Custom command", &pref_custom_command, "xterm -geometry 75x13{position} -e top"},
+};
+
+// Generic combobox preference. populate() adds entries and sets the active one;
+// on_changed is wired to the combo's "changed" signal.
+typedef struct PrefCombo {
+    const gchar* description;
+    void (*populate)(GtkComboBox* combo);
+    GCallback on_changed;
+} PrefCombo;
+
+static void thermal_zone_populate(GtkComboBox* combo);
+void on_temp_sensor_changed(GtkComboBox* combo, gpointer user_data);
+
+PrefCombo pref_combos[] = {
+    { "Thermal zone", thermal_zone_populate, G_CALLBACK(on_temp_sensor_changed) },
 };
 
 void preferences_changed() {
@@ -113,6 +132,40 @@ void on_string_changed(GtkEntry *entry, PrefString *st) {
     }
     *st->value = v;
     preferences_changed();
+}
+
+static void thermal_zone_populate(GtkComboBox* combo)
+{
+    int sensor_count = 0;
+    char** sensor_labels = NULL;
+    char** sensor_paths = discover_temp_sensors(&sensor_count, &sensor_labels);
+
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "None");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "Auto (first available)");
+
+    int active_index = 1; // default: Auto
+    if (!pref_thermometer) active_index = 0;
+    else if (!pref_temp_sensor || !pref_temp_sensor[0]) active_index = 1;
+
+    for (int i = 0; i < sensor_count; i++) {
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), sensor_labels[i]);
+        if (pref_thermometer && pref_temp_sensor
+                && g_strcmp0(pref_temp_sensor, sensor_paths[i]) == 0) {
+            active_index = i + 2;
+        }
+        gchar* key = g_strdup_printf("sensor-path-%d", i+1);
+        g_object_set_data_full(G_OBJECT(combo), key, g_strdup(sensor_paths[i]), g_free);
+        g_free(key);
+    }
+    g_object_set_data(G_OBJECT(combo), "sensor-count", GINT_TO_POINTER(sensor_count));
+    gtk_combo_box_set_active(combo, active_index);
+
+    for (int i = 0; i < sensor_count; i++) {
+        g_free(sensor_paths[i]);
+        g_free(sensor_labels[i]);
+    }
+    g_free(sensor_paths);
+    g_free(sensor_labels);
 }
 
 void on_temp_sensor_changed(GtkComboBox *combo, gpointer user_data) {
@@ -312,6 +365,20 @@ void show_pref_dialog()
         gtk_box_pack_start(GTK_BOX(vb), GTK_WIDGET(innerBox), FALSE, FALSE, 0);
     }
 
+    // TODO: better ordering/grouping of preferences (e.g. group by topic:
+    // intervals, thermal, network, display). For now combos render after numbers.
+    for (PrefCombo* c = pref_combos; c < pref_combos+G_N_ELEMENTS(pref_combos); c++)
+    {
+        GtkWidget* innerBox = gtk_hbox_new(FALSE,0);
+        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new(c->description), FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(innerBox), gtk_hseparator_new(), TRUE, TRUE, 3);
+        GtkWidget* combo = gtk_combo_box_text_new();
+        c->populate(GTK_COMBO_BOX(combo));
+        g_signal_connect(G_OBJECT(combo), "changed", c->on_changed, NULL);
+        gtk_box_pack_start(GTK_BOX(innerBox), GTK_WIDGET(combo), FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(vb), innerBox, FALSE, FALSE, 0);
+    }
+
     for(PrefString* st=pref_strings; st < pref_strings+G_N_ELEMENTS(pref_strings); st++)
     {
         GtkWidget* innerBox = gtk_hbox_new(FALSE,0);
@@ -323,69 +390,6 @@ void show_pref_dialog()
         g_signal_connect(G_OBJECT(entry), "changed", G_CALLBACK(on_string_changed), st);
         gtk_box_pack_start(GTK_BOX(innerBox), GTK_WIDGET(entry), TRUE, TRUE, 0);
         gtk_box_pack_start(GTK_BOX(vb), innerBox, FALSE, FALSE, 0);
-    }
-
-    // Add temperature sensor dropdown (replaces "Show Thermometer" checkbox)
-    {
-        GtkWidget* innerBox = gtk_hbox_new(FALSE,0);
-        
-        gtk_box_pack_start(GTK_BOX(innerBox), gtk_label_new("Temperature:"), FALSE, FALSE, 0);
-        
-        GtkWidget* combo = gtk_combo_box_text_new();
-        
-        // Discover available sensors
-        int sensor_count = 0;
-        char** sensor_labels = NULL;
-        char** sensor_paths = discover_temp_sensors(&sensor_count, &sensor_labels);
-        
-        // Add "None" as first option (replaces "Show Thermometer" checkbox)
-        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "None");
-        
-        // Add "Auto" as second option
-        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "Auto (first available)");
-        
-        int active_index = 1; // Default to "Auto"
-        
-        // Determine current selection
-        if (!pref_thermometer) {
-            active_index = 0; // "None"
-        } else if (!pref_temp_sensor || !pref_temp_sensor[0]) {
-            active_index = 1; // "Auto"
-        }
-        
-        // Add discovered sensors
-        for (int i = 0; i < sensor_count; i++) {
-            gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), sensor_labels[i]);
-            
-            // Check if this is the currently selected sensor
-            if (pref_thermometer && pref_temp_sensor && g_strcmp0(pref_temp_sensor, sensor_paths[i]) == 0) {
-                active_index = i + 2; // +2 because "None" and "Auto" are at index 0 and 1
-            }
-            
-            // Store the path as object data for retrieval later
-            gchar* key = g_strdup_printf("sensor-path-%d", i+1);
-            g_object_set_data_full(G_OBJECT(combo), key, g_strdup(sensor_paths[i]), g_free);
-            g_free(key);
-        }
-        
-        // Store sensor count as object data
-        g_object_set_data(G_OBJECT(combo), "sensor-count", GINT_TO_POINTER(sensor_count));
-        
-        gtk_combo_box_set_active(GTK_COMBO_BOX(combo), active_index);
-        
-        // Connect signal handler
-        g_signal_connect(G_OBJECT(combo), "changed", G_CALLBACK(on_temp_sensor_changed), NULL);
-        
-        gtk_box_pack_start(GTK_BOX(innerBox), GTK_WIDGET(combo), TRUE, TRUE, 0);
-        gtk_box_pack_start(GTK_BOX(vb), innerBox, FALSE, FALSE, 0);
-        
-        // Cleanup
-        for (int i = 0; i < sensor_count; i++) {
-            g_free(sensor_paths[i]);
-            g_free(sensor_labels[i]);
-        }
-        g_free(sensor_paths);
-        g_free(sensor_labels);
     }
 
     preferences_changed(); // Effect enablers
