@@ -26,7 +26,7 @@ static void net_dev_refresh(int elapsed_ms)
     if (!f) f = fopen("/proc/net/dev", "r");
     if (!f) return;
     rewind(f);
-    fflush(f);
+    fflush(f); // /proc files: rewind alone leaves stale buffer
 
     char line[256];
     if (!fgets(line, sizeof(line), f)) return;
@@ -48,8 +48,11 @@ static void net_dev_refresh(int elapsed_ms)
 
         if (strcmp(current[n].name, "lo") == 0) continue;
 
+        // /proc/net/dev fields after iface name:
+        // rx_bytes packets errs drop fifo frame compressed multicast tx_bytes ...
+        // To read rx_bytes and tx_bytes: 1 read, 7 skips, 1 read.
         u64 rx, tx;
-        if (sscanf(colon + 1, " %llu %*u %*u %*u %*u %*u %*u %*u %llu",
+        if (sscanf(colon + 1, " %llu %*u %*u %*u %*u %*u %*u %llu",
                    &rx, &tx) != 2) continue;
         current[n].rx = rx;
         current[n].tx = tx;
@@ -198,7 +201,23 @@ typedef struct { uint32_t inode; unsigned pid; } InodePid;
 static InodePid inode_map[MAX_INODE_MAP];
 static int n_inode_map = 0;
 
-// Returns fd_count, sets *socket_count
+// Cheap path: just count fds via readdir, no readlinks
+static int net_count_pid_fds(const char* pid_str)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%s/fd", pid_str);
+    DIR* dir = opendir(path);
+    if (!dir) return 0;
+    int fd_count = 0;
+    struct dirent* ent;
+    while ((ent = readdir(dir)))
+        if (ent->d_name[0] >= '0' && ent->d_name[0] <= '9')
+            fd_count++;
+    closedir(dir);
+    return fd_count;
+}
+
+// Heavy path: counts fds AND populates inode->pid map for socket attribution
 static int net_collect_pid_sockets(const char* pid_str, unsigned pid, int* socket_count)
 {
     char path[64];
@@ -313,10 +332,9 @@ static void net_stats_aggregate(int elapsed_ms)
     n_proc_net = n_new;
 }
 
-static void net_stats_refresh(int elapsed_ms)
+static void net_stats_refresh(gboolean heavy)
 {
-    net_dev_refresh(elapsed_ms);
-    inet_diag_refresh();
+    if (heavy) inet_diag_refresh();
 }
 
 static void net_stats_append_summary(GString* out)
