@@ -528,6 +528,8 @@ launch_custom_command(void)
 
     if (!regex_position)
         regex_position = g_regex_new("{position}", 0, 0, NULL);
+    /* Replace {position} placeholder with empty string; the process browser
+     * is a proper window so position-relative launching is not needed. */
     gchar *command = g_regex_replace_literal(
         regex_position, pref_custom_command, -1, 0, "", 0, NULL);
     char **argv;

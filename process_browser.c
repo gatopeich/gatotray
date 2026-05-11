@@ -267,7 +267,7 @@ static void show_process_detail(unsigned pid, const char *comm)
 {
     ProcDetailData *d = g_new0(ProcDetailData, 1);
     d->pid = pid;
-    g_strlcpy(d->comm, comm, sizeof(d->comm));
+    snprintf(d->comm, sizeof(d->comm), "%s", comm);
 
     GtkWidget *win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     d->window = win;
