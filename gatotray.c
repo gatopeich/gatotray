@@ -102,6 +102,7 @@ copy_hover_text_to_clipboard(GtkMenuItem *menuitem, gpointer user_data)
 
     GtkClipboard *primary = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
     gtk_clipboard_set_text(primary, text, -1);
+    gtk_clipboard_store(primary);
 }
 
 GdkGC *gc = NULL;
