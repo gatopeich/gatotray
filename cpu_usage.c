@@ -45,7 +45,7 @@ cpu_usage(int scale)
                     &busy, &nice, &system, &idle, &iowait, &irq, &softirq))
         error(1, errno, "Can't seem to read /proc/stat properly");
     rewind(proc_stat);
-    fflush(proc_stat); // Otherwise rewind is not effective
+    fflush(proc_stat); // /proc files: rewind alone leaves stale buffer
 
     busy += nice+system+irq+softirq;
     total = busy+idle+iowait;

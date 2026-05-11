@@ -72,6 +72,7 @@ typedef struct {
 CPUstatus* history = NULL;
 
 int width = 0, hist_size = 0, timer = 0;
+time_t start_time = 0;
 
 GdkPixmap *pixmap = NULL;
 GtkStatusIcon *app_icon = NULL;
@@ -186,7 +187,7 @@ void redraw(void)
         cairo_rel_line_to(cr, d_w-1, 0);
         cairo_line_to(cr, w-1, mid_y);
         cairo_close_path(cr);
-        cairo_set_source_rgba(cr, 0.88, 0.50, 0.0, 0.5);
+        cairo_set_source_rgba(cr, _1*net_tx_color.red, _1*net_tx_color.green, _1*net_tx_color.blue, 0.5);
         cairo_fill(cr);
 
         cairo_move_to(cr, 0, mid_y);
@@ -198,7 +199,7 @@ void redraw(void)
         cairo_rel_line_to(cr, d_w-1, 0);
         cairo_line_to(cr, w-1, mid_y);
         cairo_close_path(cr);
-        cairo_set_source_rgba(cr, 0.88, 0.88, 0.0, 0.5);
+        cairo_set_source_rgba(cr, _1*net_rx_color.red, _1*net_rx_color.green, _1*net_rx_color.blue, 0.5);
         cairo_fill(cr);
 
         PangoContext *pango = pango_cairo_create_context(cr);
@@ -253,7 +254,6 @@ void redraw(void)
                     int bar = h->net_tx_KBps * quarter / net_max_KBps;
                     if (bar > quarter) bar = quarter;
                     if (bar > 0) {
-                        static GdkColor net_tx_color = {0, 0xE000, 0x8000, 0x0000}; // orange
                         gdk_gc_set_rgb_fg_color(gc, &net_tx_color);
                         gdk_draw_line(pixmap, gc, x, mid - bar, x, mid);
                     }
@@ -262,7 +262,6 @@ void redraw(void)
                     int bar = h->net_rx_KBps * quarter / net_max_KBps;
                     if (bar > quarter) bar = quarter;
                     if (bar > 0) {
-                        static GdkColor net_rx_color = {0, 0xE000, 0xE000, 0x0000}; // yellow
                         gdk_gc_set_rgb_fg_color(gc, &net_rx_color);
                         gdk_draw_line(pixmap, gc, x, mid, x, mid + bar);
                     }
@@ -349,6 +348,45 @@ MemInfo update_history() {
     return mi;
 }
 
+void refresh_info_text(void)
+{
+    net_dev_refresh(refresh_interval_ms);
+    MemInfo meminfo = update_history();
+    top_procs_refresh();
+
+    if (!info_text)
+        info_text = g_string_new(NULL);
+
+    time_t now = time(NULL);
+    if (screensaver)
+        g_string_assign(info_text, ctime(&now));
+    else
+        g_string_set_size(info_text, 0);
+
+    const char* cpu_icon = PERCENT(history[0].cpu.usage) > CPU_HIGH_THRESHOLD ? "📈" : "📉";
+    const char* io_icon = PERCENT(history[0].cpu.iowait) < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
+
+    char since_buf[32] = "";
+    if (start_time) {
+        struct tm* tm = localtime(&start_time);
+        strftime(since_buf, sizeof(since_buf), "%Y-%m-%d %H:%M:%S", tm);
+    }
+    g_string_append_printf(info_text, GATOTRAY_VERSION "  (running since %s)"
+        "\n%s  CPU %d%% busy, %s  %d%% on I/O-wait @ %d MHz"
+        , since_buf
+        , cpu_icon, PERCENT(history[0].cpu.usage), io_icon, PERCENT(history[0].cpu.iowait), scaling_cur_freq);
+
+    if (meminfo.Total_MB)
+        g_string_append_printf(info_text, "\n💾  Free RAM: %d/%d MB"
+            , RESCALE(history[0].free_memory, meminfo.Total_MB), meminfo.Total_MB);
+
+    if (history[0].temp)
+        g_string_append_printf(info_text, ". 🌡️  Temperature: %d°C", history[0].temp);
+
+    net_stats_append_summary(info_text);
+    top_procs_append_summary(info_text);
+}
+
 int
 timeout_cb (gpointer data)
 {
@@ -393,44 +431,9 @@ timeout_cb (gpointer data)
         blend(history[i].net_tx_KBps, history[i-1].net_tx_KBps);
         #undef blend
     }
-    MemInfo meminfo = update_history();
-
-    top_procs_refresh();
-
-    if (!info_text)
-        info_text = g_string_new(NULL);
-
+    refresh_info_text();
     time_t now = time(NULL);
-    if (screensaver)
-        g_string_assign(info_text, ctime(&now));
-    else
-        g_string_set_size(info_text, 0);
-
-    // Dynamic CPU icon based on usage
-    const char* cpu_icon = PERCENT(history[0].cpu.usage) > CPU_HIGH_THRESHOLD ? "📈" : "📉";
-    // Dynamic I/O icon based on wait percentage
-    const char* io_icon = PERCENT(history[0].cpu.iowait) < IO_WAIT_THRESHOLD ? "🔄" : "⏳";
-    
-    g_string_append_printf(info_text, GATOTRAY_VERSION "\n%s  CPU %d%% busy, %s  %d%% on I/O-wait @ %d MHz"
-        , cpu_icon, PERCENT(history[0].cpu.usage), io_icon, PERCENT(history[0].cpu.iowait), scaling_cur_freq);
-
-    if (meminfo.Total_MB)
-        g_string_append_printf (info_text, "\n💾  Free RAM: %d/%d MB"
-            , RESCALE(history[0].free_memory, meminfo.Total_MB), meminfo.Total_MB);
-
-    if (history[0].temp)
-        g_string_append_printf (info_text, ". 🌡️  Temperature: %d°C", history[0].temp);
-
-    net_stats_append_summary(info_text);
-
-    top_procs_append_summary(info_text);
-
-    // Tooltip should not be refreshed too often, otherwise it never shows
-    static time_t last_tooltip_update = 0;
-    if (app_icon && now != last_tooltip_update) {
-        gtk_status_icon_set_tooltip (app_icon, info_text->str);
-        last_tooltip_update = now;
-    }
+    // Tooltip text is supplied on demand via query-tooltip signal — no setter call here.
 
     if (!screensaver || gdk_window_is_viewable(screensaver))
         redraw();
@@ -445,6 +448,18 @@ timeout_cb (gpointer data)
     // Re-add every time to handle changes in refresh_interval_ms
     g_timeout_add(refresh_interval_ms, timeout_cb, NULL);
     return FALSE;
+}
+
+void
+copy_info_to_clipboard()
+{
+    if (!info_text) return;
+    GtkClipboard* clip = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    gtk_clipboard_set_text(clip, info_text->str, -1);
+    gtk_clipboard_store(clip);
+    // Also set PRIMARY so middle-click paste works
+    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_PRIMARY),
+                           info_text->str, -1);
 }
 
 void
@@ -498,6 +513,14 @@ install_screensaver()
     }
 }
 
+gboolean
+query_tooltip_cb(GtkStatusIcon* icon, gint x, gint y, gboolean keyboard_mode,
+                 GtkTooltip* tooltip, gpointer user_data)
+{
+    gtk_tooltip_set_text(tooltip, info_text ? info_text->str : GATOTRAY_VERSION);
+    return TRUE;
+}
+
 GRegex* regex_position;
 gboolean
 icon_activate(GtkStatusIcon *app_icon, gpointer user_data)
@@ -542,6 +565,7 @@ icon_activate(GtkStatusIcon *app_icon, gpointer user_data)
 int
 main( int argc, char *argv[] )
 {
+    start_time = time(NULL);
     abs_argv0 = NULL;
     if (!g_file_test(argv[0], G_FILE_TEST_EXISTS)||g_file_test(argv[0], G_FILE_TEST_IS_DIR))
         abs_argv0 = g_find_program_in_path(argv[0]);
@@ -551,16 +575,40 @@ main( int argc, char *argv[] )
         g_object_unref(gf);
     }
 
-    gtk_init (&argc, &argv);
-    GdkPixbuf* xpm = gdk_pixbuf_new_from_xpm_data(gatotray_xpm);
-    gtk_window_set_default_icon(xpm);
+    // --info: print one info-text snapshot and exit (no GTK / no display required)
+    gboolean info_only = FALSE;
+    for (int i = 1; i < argc; i++) {
+        if (g_str_equal(argv[i], "--info") || g_str_equal(argv[i], "-i")) {
+            info_only = TRUE;
+            break;
+        }
+    }
+
+    if (!info_only) {
+        gtk_init (&argc, &argv);
+        GdkPixbuf* xpm = gdk_pixbuf_new_from_xpm_data(gatotray_xpm);
+        gtk_window_set_default_icon(xpm);
+    }
 
     pref_init();
 
     history = g_malloc(sizeof(*history));
     hist_size = width = 1;
     update_history();
-    
+
+    if (info_only) {
+        // Force every cadence to fire on each refresh so two close-spaced samples
+        // produce meaningful CPU% and KB/s deltas.
+        refresh_interval_ms = 500;
+        top_refresh_ms = 500;
+        heavy_refresh_ms = 500;
+        refresh_info_text();              // prime samples
+        g_usleep(500000);
+        refresh_info_text();
+        puts(info_text->str);
+        return 0;
+    }
+
     // Load cached history from previous run (may resize hist_size/width)
     history_load();
 
@@ -614,6 +662,11 @@ main( int argc, char *argv[] )
         g_signal_connect(G_OBJECT (menuitem), "activate", install_screensaver, NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
 
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_COPY, NULL);
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Copy info to clipboard");
+        g_signal_connect(G_OBJECT (menuitem), "activate", copy_info_to_clipboard, NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
+
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),
                               gtk_separator_menu_item_new());
 
@@ -631,8 +684,9 @@ main( int argc, char *argv[] )
         g_signal_connect(G_OBJECT(app_icon), "popup-menu", G_CALLBACK(popup_menu_cb), menu);
         g_signal_connect(G_OBJECT(app_icon), "size-changed", G_CALLBACK(resize_cb), NULL);
         g_signal_connect(G_OBJECT(app_icon), "activate", G_CALLBACK(icon_activate), NULL);
+        g_signal_connect(G_OBJECT(app_icon), "query-tooltip", G_CALLBACK(query_tooltip_cb), NULL);
         gtk_status_icon_set_visible(app_icon, TRUE);
-        gtk_status_icon_set_tooltip(app_icon, GATOTRAY_VERSION);
+        gtk_status_icon_set_has_tooltip(app_icon, TRUE);
     }
     g_free(envp);
     g_timeout_add(refresh_interval_ms, timeout_cb, NULL);
