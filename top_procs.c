@@ -35,25 +35,6 @@ float TICKS_PER_SEC(void) {
     return cached;
 }
 
-// Read Threads count from /proc/[pid]/status
-static unsigned read_thread_count(const char* pid)
-{
-    char path[64];
-    snprintf(path, sizeof(path), "/proc/%s/status", pid);
-    FILE* f = fopen(path, "r");
-    if (!f) return 0;
-
-    unsigned threads = 0;
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-        if (sscanf(line, "Threads: %u", &threads) == 1)
-            break;
-    }
-    fclose(f);
-    return threads;
-}
-
-
 typedef unsigned long long ULL;
 typedef struct ProcessInfo {
     struct ProcessInfo* next; // embedded single linked list
@@ -193,15 +174,16 @@ ProcessInfo ProcessInfo_scan(const char* pid)
     read_field(17, cstime);
     pi.cpu_time = utime + stime + cutime + cstime;
 
+    // Thread count from /proc/[pid]/stat field 20 (avoids second open of /status)
+    read_field(20, num_threads);
+    pi.thread_count = num_threads;
+
     // Calculate CPU average since process started
     read_field(22, starttime);
     pi.average_cpu = pi.cpu_time * 100.0 / (cpu_total_ticks - starttime);
 
     read_field(24, rss); pi.rss = rss; // TODO: Discount shared memory
     read_field(42, delayacct_blkio_ticks); pi.io_time = delayacct_blkio_ticks;
-
-    // Thread count from /proc/[pid]/status
-    pi.thread_count = read_thread_count(pid);
 
     pi.sample_time = cpu_total_ticks;
     return pi;
@@ -212,6 +194,13 @@ void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
     float percent_time = 100.0 / (update->sample_time - pi->sample_time);
     update->cpu = (update->cpu_time - pi->cpu_time) * percent_time;
     update->io_wait = (update->io_time - pi->io_time) * percent_time;
+    // Fields not produced by ProcessInfo_scan must be carried over from pi —
+    // otherwise *pi = *update below clobbers them with stack garbage.
+    update->fd_count = pi->fd_count;
+    update->socket_count = pi->socket_count;
+    update->net_rx_KBps = pi->net_rx_KBps;
+    update->net_tx_KBps = pi->net_tx_KBps;
+    update->min_rtt_us = pi->min_rtt_us;
     void* next = pi->next;
     *pi = *update;
     pi->next = next;
@@ -224,7 +213,16 @@ void top_procs_refresh(void)
         return;
     int elapsed_ms = top_refresh_ms;
     delay = top_refresh_ms/refresh_interval_ms;
-    net_stats_refresh(elapsed_ms);
+
+    // Heavy work (inet_diag netlink + per-pid fd readlinks + socket aggregation)
+    // runs on its own slower cadence to keep idle CPU low.
+    static int heavy_accum_ms = 0;
+    heavy_accum_ms += elapsed_ms;
+    gboolean heavy = heavy_accum_ms >= heavy_refresh_ms;
+    int heavy_elapsed_ms = heavy_accum_ms;
+    if (heavy) heavy_accum_ms = 0;
+
+    net_stats_refresh(heavy);
     static GDir* proc_dir = NULL;
     int find_my_pid = 0;
     if (proc_dir) {
@@ -240,7 +238,7 @@ void top_procs_refresh(void)
     // iterator pointers
     ProcessInfo **it = &top_procs, *p = *it;
 
-    net_inode_map_clear();
+    if (heavy) net_inode_map_clear();
 
     const gchar* pid;
     procs_total = procs_active = 0;
@@ -275,22 +273,31 @@ void top_procs_refresh(void)
             *p = proc;
             p->next = NULL;
             p->cpu = p->io_wait = 0;
+            // Net fields are populated only on heavy ticks; zero until then
+            p->fd_count = p->socket_count = 0;
+            p->net_rx_KBps = p->net_tx_KBps = 0;
+            p->min_rtt_us = 0;
             g_debug("Added process %d (%s)", p->pid, p->comm);
             if (find_my_pid && p->pid == find_my_pid)
                 procs_self = p;
         }
 
-        int sock_count;
-        p->fd_count = net_collect_pid_sockets(pid, p->pid, &sock_count);
-        p->socket_count = sock_count;
-        ProcNetStat* ns = net_stat_by_pid(p->pid);
-        if (ns) {
-            p->net_rx_KBps = ns->rx_KBps;
-            p->net_tx_KBps = ns->tx_KBps;
-            p->min_rtt_us = ns->min_rtt_us;
+        if (heavy) {
+            int sock_count;
+            p->fd_count = net_collect_pid_sockets(pid, p->pid, &sock_count);
+            p->socket_count = sock_count;
+            ProcNetStat* ns = net_stat_by_pid(p->pid);
+            if (ns) {
+                p->net_rx_KBps = ns->rx_KBps;
+                p->net_tx_KBps = ns->tx_KBps;
+                p->min_rtt_us = ns->min_rtt_us;
+            } else {
+                p->net_rx_KBps = p->net_tx_KBps = 0;
+                p->min_rtt_us = 0;
+            }
         } else {
-            p->net_rx_KBps = p->net_tx_KBps = 0;
-            p->min_rtt_us = 0;
+            p->fd_count = net_count_pid_fds(pid);
+            // socket_count, net_rx/tx_KBps, min_rtt_us persist from last heavy tick
         }
 
         if (!top_mem || proc.rss > top_mem->rss)
@@ -314,5 +321,33 @@ void top_procs_refresh(void)
 
         p = *(it = &(p->next));
     }
-    net_stats_aggregate(elapsed_ms);
+    if (heavy) net_stats_aggregate(heavy_elapsed_ms);
+
+    // Self CPU/IO: 10-second rolling average to avoid the misleading
+    // narrow-window self-measurement that includes our own refresh burst.
+    if (procs_self) {
+        #define SELF_RING_SIZE 6
+        typedef struct { ULL cpu_time, io_time, sample_time; } SelfSample;
+        static SelfSample ring[SELF_RING_SIZE];
+        static int ring_pos = 0, ring_filled = 0;
+        const ULL ten_sec_ticks = (ULL)(10 * TICKS_PER_SEC());
+
+        ring[ring_pos].cpu_time = procs_self->cpu_time;
+        ring[ring_pos].io_time = procs_self->io_time;
+        ring[ring_pos].sample_time = procs_self->sample_time;
+        ring_pos = (ring_pos + 1) % SELF_RING_SIZE;
+        if (ring_filled < SELF_RING_SIZE) ring_filled++;
+
+        SelfSample* base = NULL;
+        for (int i = 1; i <= ring_filled; i++) {
+            int idx = (ring_pos - i - 1 + SELF_RING_SIZE) % SELF_RING_SIZE;
+            base = &ring[idx];
+            if (procs_self->sample_time - base->sample_time >= ten_sec_ticks) break;
+        }
+        if (base && procs_self->sample_time > base->sample_time) {
+            float pct = 100.0f / (procs_self->sample_time - base->sample_time);
+            procs_self->cpu = (procs_self->cpu_time - base->cpu_time) * pct;
+            procs_self->io_wait = (procs_self->io_time - base->io_time) * pct;
+        }
+    }
 }
