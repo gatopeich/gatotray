@@ -95,7 +95,7 @@ copy_hover_text_to_clipboard(GtkMenuItem *menuitem, gpointer user_data)
     (void)menuitem;
     (void)user_data;
     const gchar *text = GATOTRAY_VERSION;
-    if (info_text != NULL && info_text->str != NULL && info_text->len > 0)
+    if (info_text != NULL && info_text->len > 0)
         text = info_text->str;
 
     GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
@@ -104,7 +104,6 @@ copy_hover_text_to_clipboard(GtkMenuItem *menuitem, gpointer user_data)
 
     GtkClipboard *primary = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
     gtk_clipboard_set_text(primary, text, -1);
-    gtk_clipboard_store(primary);
 }
 
 GdkGC *gc = NULL;
