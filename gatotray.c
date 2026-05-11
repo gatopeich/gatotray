@@ -89,6 +89,17 @@ popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* men
     gtk_menu_popup(menu, NULL, NULL, NULL, NULL, button, time);
 }
 
+static void
+copy_hover_text_to_clipboard(GtkMenuItem *menuitem, gpointer user_data)
+{
+    (void)menuitem;
+    (void)user_data;
+    GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    const gchar *text = (info_text && info_text->len) ? info_text->str : GATOTRAY_VERSION;
+    gtk_clipboard_set_text(clipboard, text, -1);
+    gtk_clipboard_store(clipboard);
+}
+
 GdkGC *gc = NULL;
 GdkPoint Termometer[] = {{2,16},{2,2},{3,1},{4,1},{5,2},{5,16},{6,17},{6,19},{5,20},
     {2,20},{1,19},{1,17},{2,16}};
@@ -607,6 +618,11 @@ main( int argc, char *argv[] )
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_PREFERENCES, NULL);
         g_signal_connect(G_OBJECT (menuitem), "activate", show_pref_dialog, NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
+
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_COPY, NULL);
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Copy hover text");
+        g_signal_connect(G_OBJECT(menuitem), "activate", G_CALLBACK(copy_hover_text_to_clipboard), NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_FULLSCREEN, NULL);

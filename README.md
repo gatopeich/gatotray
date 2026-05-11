@@ -61,7 +61,7 @@ Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-de
 
 ## Configuration ##
 
-gatotray provides an easy-to-use preferences dialog accessible by right-clicking the tray icon and selecting "Preferences".
+gatotray provides an easy-to-use preferences dialog accessible by right-clicking the tray icon and selecting "Preferences". The same menu also includes "Copy hover text" to copy the current tooltip summary to the X clipboard.
 
 ### Screensaver Installation
 
