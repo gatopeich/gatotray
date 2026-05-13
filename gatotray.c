@@ -90,11 +90,10 @@ popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* men
 }
 
 static void
-copy_hover_text_to_clipboard(GtkMenuItem *menuitem G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+copy_current_info_to_clipboard(GtkMenuItem *menuitem G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
-    if (info_text == NULL || info_text->len == 0)
-        return;
-    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), info_text->str, -1);
+    if (info_text && info_text->len)
+        gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), info_text->str, -1);
 }
 
 GdkGC *gc = NULL;
@@ -618,8 +617,8 @@ main( int argc, char *argv[] )
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_COPY, NULL);
-        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Copy hover text");
-        g_signal_connect(G_OBJECT(menuitem), "activate", G_CALLBACK(copy_hover_text_to_clipboard), NULL);
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Copy to clipboard");
+        g_signal_connect(G_OBJECT(menuitem), "activate", G_CALLBACK(copy_current_info_to_clipboard), NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_FULLSCREEN, NULL);

@@ -61,7 +61,7 @@ Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-de
 
 ## Other Features ##
 
-* Right-click tray menu includes **Copy hover text** to copy the current tooltip summary to the X clipboard.
+* Right-click the tray icon and choose **Copy to clipboard** to copy the current info summary.
 
 
 ## Configuration ##
