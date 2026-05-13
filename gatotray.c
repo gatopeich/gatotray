@@ -90,6 +90,13 @@ popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* men
     gtk_menu_popup(menu, NULL, NULL, NULL, NULL, button, time);
 }
 
+static void
+copy_current_info_to_clipboard(GtkMenuItem *menuitem G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+{
+    if (info_text && info_text->len)
+        gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), info_text->str, -1);
+}
+
 GdkGC *gc = NULL;
 GdkPoint Termometer[] = {{2,16},{2,2},{3,1},{4,1},{5,2},{5,16},{6,17},{6,19},{5,20},
     {2,20},{1,19},{1,17},{2,16}};
@@ -655,6 +662,11 @@ main( int argc, char *argv[] )
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_PREFERENCES, NULL);
         g_signal_connect(G_OBJECT (menuitem), "activate", show_pref_dialog, NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
+
+        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_COPY, NULL);
+        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Copy to clipboard");
+        g_signal_connect(G_OBJECT(menuitem), "activate", G_CALLBACK(copy_current_info_to_clipboard), NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_FULLSCREEN, NULL);

@@ -59,6 +59,11 @@ Requires GTK2 libraries and procps: `sudo apt install libgtk2.0-dev libprocps-de
 * History persistence: gatotray automatically saves CPU, memory, and temperature history every minute to `/tmp/gatotray-history.bin`, ensuring that meaningful data is displayed immediately when the application restarts during the same session (especially useful for the screensaver mode).
 
 
+## Other Features ##
+
+* Right-click the tray icon and choose **Copy to clipboard** to copy the current info summary.
+
+
 ## Configuration ##
 
 gatotray provides an easy-to-use preferences dialog accessible by right-clicking the tray icon and selecting "Preferences".
