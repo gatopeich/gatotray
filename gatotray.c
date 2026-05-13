@@ -90,20 +90,11 @@ popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* men
 }
 
 static void
-copy_hover_text_to_clipboard(GtkMenuItem *menuitem, gpointer user_data)
+copy_hover_text_to_clipboard(GtkMenuItem *menuitem G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
-    (void)menuitem;
-    (void)user_data;
-    const gchar *text = GATOTRAY_VERSION;
-    if (info_text != NULL && info_text->len > 0)
-        text = info_text->str;
-
-    GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
-    gtk_clipboard_set_text(clipboard, text, -1);
-    gtk_clipboard_store(clipboard);
-
-    GtkClipboard *primary = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
-    gtk_clipboard_set_text(primary, text, -1);
+    if (info_text == NULL || info_text->len == 0)
+        return;
+    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), info_text->str, -1);
 }
 
 GdkGC *gc = NULL;
