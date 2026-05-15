@@ -93,8 +93,10 @@ popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* men
 static void
 copy_current_info_to_clipboard(GtkMenuItem *menuitem G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
-    if (info_text && info_text->len)
-        gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), info_text->str, -1);
+    if (!info_text || !info_text->len) return;
+    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), info_text->str, -1);
+    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_PRIMARY),   info_text->str, -1);
+    gtk_clipboard_store(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD));
 }
 
 GdkGC *gc = NULL;
@@ -458,18 +460,6 @@ timeout_cb (gpointer data)
 }
 
 void
-copy_info_to_clipboard()
-{
-    if (!info_text) return;
-    GtkClipboard* clip = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
-    gtk_clipboard_set_text(clip, info_text->str, -1);
-    gtk_clipboard_store(clip);
-    // Also set PRIMARY so middle-click paste works
-    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_PRIMARY),
-                           info_text->str, -1);
-}
-
-void
 open_website()
 {
     g_spawn_command_line_async("xdg-open https://"GATOTRAY_URL, NULL);
@@ -672,11 +662,6 @@ main( int argc, char *argv[] )
         menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_FULLSCREEN, NULL);
         gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Install screensaver");
         g_signal_connect(G_OBJECT (menuitem), "activate", install_screensaver, NULL);
-        gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
-
-        menuitem = gtk_image_menu_item_new_from_stock(GTK_STOCK_COPY, NULL);
-        gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Copy info to clipboard");
-        g_signal_connect(G_OBJECT (menuitem), "activate", copy_info_to_clipboard, NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
 
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),
