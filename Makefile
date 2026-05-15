@@ -54,7 +54,12 @@ gatotray-$(VERSION).$(REL).deb: gatotray gatotray.xpm gatotray.desktop gatotray-
 Debian-Control: Makefile
 	sed -ie 's/^Version:.*/Version: $(VERSION).$(REL)/' $@
 
-PKGBUILD: Makefile
+.PHONY: FORCE
+FORCE:
+
+# PKGBUILD pkgver/pkgrel are kept in sync with VERSION/REL.
+# Re-checked every make invocation; sed runs only on mismatch.
+PKGBUILD: FORCE
 	@grep -q '^pkgver=$(VERSION)$$' $@ || { \
 	    sed -i 's/^pkgver=.*/pkgver=$(VERSION)/' $@; \
 	    echo "$@: pkgver -> $(VERSION)"; \
