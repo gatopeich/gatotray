@@ -5,6 +5,8 @@
 #  Briefly: Use it however suits you better and just give me due credit.
 #
 ### Changelog:
+# V5.1: Lower idle CPU, --info CLI, configurable net colors, settings refactor
+# V5.0: Network monitoring (bandwidth, latency, fd/socket tracking)
 # V4.1: Security fixes
 # V4.0: Track top resource consuming processes
 # V3.3: Add free memory chart (from proc/meminfo)
@@ -14,7 +16,7 @@
 # V2.1: Added CCby license. Restructured a bit.
 # V2.0: Added 32-bit target for 64 bits environment.
 
-VERSION := 5.0
+VERSION := 5.1
 REL := $(shell git log -1 --format=%cd --date=format:%Y%m%d || date +%Y%m%d)
 CFLAGS := -std=c11 -Wall -O2 -DNDEBUG -g2 -DVERSION=\"$(VERSION).$(REL)\" $(CFLAGS) -Wno-deprecated-declarations
 CPPFLAGS := `pkg-config --cflags gtk+-2.0` $(CPPFLAGS)
@@ -53,8 +55,14 @@ Debian-Control: Makefile
 	sed -ie 's/^Version:.*/Version: $(VERSION).$(REL)/' $@
 
 PKGBUILD: Makefile
-	sed -ie 's/^pkgver=.*/pkgver=$(VERSION)/' $@
-	sed -ie 's/^pkgrel=.*/pkgrel=$(REL)/' $@
+	@grep -q '^pkgver=$(VERSION)$$' $@ || { \
+	    sed -i 's/^pkgver=.*/pkgver=$(VERSION)/' $@; \
+	    echo "$@: pkgver -> $(VERSION)"; \
+	}
+	@grep -q '^pkgrel=$(REL)$$' $@ || { \
+	    sed -i 's/^pkgrel=.*/pkgrel=$(REL)/' $@; \
+	    echo "$@: pkgrel -> $(REL)"; \
+	}
 
 # Tarball for building distribution packages
 tarball: gatotray-$(VERSION).$(REL).tar.gz
