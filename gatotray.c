@@ -93,10 +93,8 @@ popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* men
 static void
 copy_current_info_to_clipboard(GtkMenuItem *menuitem G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
-    if (!info_text || !info_text->len) return;
-    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), info_text->str, -1);
-    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_PRIMARY),   info_text->str, -1);
-    gtk_clipboard_store(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD));
+    if (info_text && info_text->len)
+        gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), info_text->str, -1);
 }
 
 GdkGC *gc = NULL;
