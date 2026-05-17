@@ -84,6 +84,9 @@ gchar* abs_argv0;
 void history_save(void);
 void history_load(void);
 
+// Process browser (included here so it can access history[] and CPUstatus)
+#include "process_browser.c"
+
 static void
 popup_menu_cb(GtkStatusIcon *status_icon, guint button, guint time, GtkMenu* menu)
 {
@@ -517,44 +520,42 @@ query_tooltip_cb(GtkStatusIcon* icon, gint x, gint y, gboolean keyboard_mode,
 }
 
 GRegex* regex_position;
+
+/* Left-click on the tray icon: open the process browser. */
 gboolean
 icon_activate(GtkStatusIcon *app_icon, gpointer user_data)
 {
+    (void)app_icon; (void)user_data;
+    pb_show_main();
+    return TRUE;
+}
+
+/* Launch the user-configured custom command (e.g. xterm with top).
+ * Calling again while the child is running will kill it instead. */
+void
+launch_custom_command(void)
+{
     static GPid tops_pid = 0;
 
-    if(tops_pid) {
+    if (tops_pid) {
         kill(tops_pid, SIGTERM);
         g_spawn_close_pid(tops_pid);
         tops_pid = 0;
+        return;
     }
-    else
-    {
-        gchar* pos;
-        GdkRectangle area;
-        GtkOrientation orientation;
-        if(gtk_status_icon_get_geometry(app_icon, NULL, &area, &orientation))
-        {
-            int x, y;
-            if(orientation == GTK_ORIENTATION_HORIZONTAL) {
-                x = area.x;
-                y = area.y > area.height ? -1 : 0;
-            } else {
-                y = area.y;
-                x = area.x > area.width ? -1 : 0;
-            }
-            pos = g_strdup_printf("%+d%+d", x, y);
-        }
-        else pos = g_strdup("");
-        if (!regex_position) regex_position = g_regex_new("{position}",0,0,NULL);
-        gchar* command = g_regex_replace_literal(regex_position, pref_custom_command, -1, 0, pos, 0, NULL);
-        g_free(pos);
-        char **argv;
-        g_shell_parse_argv(command, NULL, &argv, NULL);
-        g_free(command);
-        g_spawn_async( NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &tops_pid, NULL);
-        g_strfreev(argv);
-    }
-    return TRUE;
+
+    if (!regex_position)
+        regex_position = g_regex_new("{position}", 0, 0, NULL);
+    /* Replace {position} placeholder with empty string; the process browser
+     * is a proper window so position-relative launching is not needed. */
+    gchar *command = g_regex_replace_literal(
+        regex_position, pref_custom_command, -1, 0, "", 0, NULL);
+    char **argv;
+    g_shell_parse_argv(command, NULL, &argv, NULL);
+    g_free(command);
+    g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH,
+        NULL, NULL, &tops_pid, NULL);
+    g_strfreev(argv);
 }
 
 int
@@ -661,6 +662,24 @@ main( int argc, char *argv[] )
         gtk_menu_item_set_label(GTK_MENU_ITEM(menuitem), "Install screensaver");
         g_signal_connect(G_OBJECT (menuitem), "activate", install_screensaver, NULL);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),menuitem);
+
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                              gtk_separator_menu_item_new());
+
+        menuitem = gtk_menu_item_new_with_label("Process Browser");
+        g_signal_connect(G_OBJECT(menuitem), "activate",
+            G_CALLBACK(pb_show_main), NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
+
+        menuitem = gtk_menu_item_new_with_label("Launch Custom Command");
+        g_signal_connect(G_OBJECT(menuitem), "activate",
+            G_CALLBACK(launch_custom_command), NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
+
+        menuitem = gtk_menu_item_new_with_label("Close All Windows");
+        g_signal_connect(G_OBJECT(menuitem), "activate",
+            G_CALLBACK(pb_close_all), NULL);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);
 
         gtk_menu_shell_append(GTK_MENU_SHELL(menu),
                               gtk_separator_menu_item_new());
