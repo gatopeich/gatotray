@@ -37,7 +37,7 @@ float TICKS_PER_SEC(void) {
 
 typedef unsigned long long ULL;
 typedef struct ProcessInfo {
-    struct ProcessInfo* next; // embedded single linked list
+    gboolean seen; // mark-and-sweep flag for the current refresh
     unsigned pid, rss, fd_count, socket_count, thread_count;
     ULL cpu_time, io_time, sample_time;
     float cpu, io_wait, average_cpu;
@@ -47,7 +47,9 @@ typedef struct ProcessInfo {
 } ProcessInfo;
 
 int procs_total=0, procs_active=0;
-ProcessInfo *top_procs=NULL, *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
+// Keyed by PID (GUINT_TO_POINTER). Values are owned ProcessInfo* (freed on remove).
+GHashTable *procs_by_pid=NULL;
+ProcessInfo *top_cpu=NULL, *top_mem=NULL, *top_avg=NULL, *top_io=NULL
     , *top_cumulative=NULL, *top_fds=NULL, *top_threads=NULL
     , *top_net=NULL, *top_sockets=NULL, *procs_self=NULL;
 
@@ -201,9 +203,20 @@ void ProcessInfo_update(ProcessInfo* pi, ProcessInfo* update)
     update->net_rx_KBps = pi->net_rx_KBps;
     update->net_tx_KBps = pi->net_tx_KBps;
     update->min_rtt_us = pi->min_rtt_us;
-    void* next = pi->next;
     *pi = *update;
-    pi->next = next;
+}
+
+// Sweep callback: drop nodes not seen in the current refresh (process died).
+// Order-independent, so PID wraparound and unsorted /proc listings are harmless.
+static gboolean proc_not_seen(gpointer key, gpointer value, gpointer user_data)
+{
+    (void)key; (void)user_data;
+    ProcessInfo* p = value;
+    if (p->seen)
+        return FALSE;
+    g_debug("Process %d (%s) died", p->pid, p->comm);
+    if (p == procs_self) procs_self = NULL; // never leave a dangling self pointer
+    return TRUE;
 }
 
 void top_procs_refresh(void)
@@ -230,13 +243,20 @@ void top_procs_refresh(void)
     } else {
         find_my_pid = getpid();
         proc_dir = g_dir_open ("/proc", 0, NULL);
+        procs_by_pid = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, free);
     }
 
     // Reset top process pointers
     top_cpu = top_mem = top_avg = top_io = top_cumulative = top_fds = top_threads = top_net = top_sockets = NULL;
 
-    // iterator pointers
-    ProcessInfo **it = &top_procs, *p = *it;
+    // Mark all known processes unseen; surviving ones get re-marked below.
+    {
+        GHashTableIter iter;
+        gpointer val;
+        g_hash_table_iter_init(&iter, procs_by_pid);
+        while (g_hash_table_iter_next(&iter, NULL, &val))
+            ((ProcessInfo*)val)->seen = FALSE;
+    }
 
     if (heavy) net_inode_map_clear();
 
@@ -253,34 +273,26 @@ void top_procs_refresh(void)
         if (proc.pid == 0)
             continue;
 
-        // /proc/stat/[pid] entries seem to be sorted by numeric pid
-        // new PIDs are expected to appear at end of the list
-        while (G_UNLIKELY(p && p->pid != proc.pid)) {
-            g_debug("Process %d (%s) died", p->pid, p->comm);
-            if (G_UNLIKELY(p->next && p->pid >= p->next->pid))
-                g_critical("Broken assumption that /proc/[pid] are always sorted. Please report bug!");
-            *it = p->next;
-            free(p);
-            p = *it;
-        }
+        // Direct lookup by PID — no ordering assumptions about /proc or PID values.
+        ProcessInfo* p = g_hash_table_lookup(procs_by_pid, GUINT_TO_POINTER(proc.pid));
         if (p) {
             g_debug("Updating process %d (%s)", p->pid, p->comm);
             ProcessInfo_update(p, &proc);
             procs_active += !!p->cpu;
         } else {
-            // reached end of the list, add new
-            *it = p = malloc(sizeof(proc));
+            p = malloc(sizeof(proc));
             *p = proc;
-            p->next = NULL;
             p->cpu = p->io_wait = 0;
             // Net fields are populated only on heavy ticks; zero until then
             p->fd_count = p->socket_count = 0;
             p->net_rx_KBps = p->net_tx_KBps = 0;
             p->min_rtt_us = 0;
+            g_hash_table_insert(procs_by_pid, GUINT_TO_POINTER(p->pid), p);
             g_debug("Added process %d (%s)", p->pid, p->comm);
             if (find_my_pid && p->pid == find_my_pid)
                 procs_self = p;
         }
+        p->seen = TRUE;
 
         if (heavy) {
             int sock_count;
@@ -300,27 +312,29 @@ void top_procs_refresh(void)
             // socket_count, net_rx/tx_KBps, min_rtt_us persist from last heavy tick
         }
 
-        if (!top_mem || proc.rss > top_mem->rss)
+        if (!top_mem || p->rss > top_mem->rss)
             top_mem = p;
-        if (!top_avg || proc.average_cpu > top_avg->average_cpu)
+        if (!top_avg || p->average_cpu > top_avg->average_cpu)
             top_avg = p;
-        if (!top_cpu || proc.cpu > top_cpu->cpu)
+        if (!top_cpu || p->cpu > top_cpu->cpu)
             top_cpu = p;
-        if (!top_io || proc.io_wait > top_io->io_wait)
+        if (!top_io || p->io_wait > top_io->io_wait)
             top_io = p;
-        if (!top_cumulative || proc.cpu_time > top_cumulative->cpu_time)
+        if (!top_cumulative || p->cpu_time > top_cumulative->cpu_time)
             top_cumulative = p;
         if (!top_fds || p->fd_count > top_fds->fd_count)
             top_fds = p;
-        if (!top_threads || proc.thread_count > top_threads->thread_count)
+        if (!top_threads || p->thread_count > top_threads->thread_count)
             top_threads = p;
         if (!top_net || (p->net_rx_KBps + p->net_tx_KBps) > (top_net->net_rx_KBps + top_net->net_tx_KBps))
             top_net = p;
         if (!top_sockets || p->socket_count > top_sockets->socket_count)
             top_sockets = p;
-
-        p = *(it = &(p->next));
     }
+
+    // Sweep out processes that disappeared (frees their nodes; clears procs_self if it died).
+    g_hash_table_foreach_remove(procs_by_pid, proc_not_seen, NULL);
+
     if (heavy) net_stats_aggregate(heavy_elapsed_ms);
 
     // Self CPU/IO: 10-second rolling average to avoid the misleading
