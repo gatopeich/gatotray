@@ -48,7 +48,7 @@ gatotray-$(VERSION).$(REL).deb: gatotray gatotray.xpm gatotray.desktop gatotray-
 	install -vD gatotray.xpm root/usr/share/icons/gatotray.xpm
 	install -vD gatotray3X.png root/usr/share/icons/gatotray.png
 	install -vD Debian-Control root/DEBIAN/control
-	sed -i 's/^Version:.*/Version: $(VERSION)/' root/DEBIAN/control
+	sed -i 's/^Version:.*/Version: $(VERSION).$(REL)/' root/DEBIAN/control
 	dpkg -b root $@
 
 Debian-Control: Makefile
