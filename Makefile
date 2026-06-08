@@ -52,7 +52,7 @@ gatotray-$(VERSION).$(REL).deb: gatotray gatotray.xpm gatotray.desktop gatotray-
 	dpkg -b root $@
 
 Debian-Control: Makefile
-	sed -ie 's/^Version:.*/Version: $(VERSION).$(REL)/' $@
+	sed -i 's/^Version:.*/Version: $(VERSION).$(REL)/' $@
 
 .PHONY: FORCE
 FORCE:
@@ -68,6 +68,10 @@ PKGBUILD: FORCE
 	    sed -i 's/^pkgrel=.*/pkgrel=$(REL)/' $@; \
 	    echo "$@: pkgrel -> $(REL)"; \
 	}
+
+# AUR metadata, regenerated from PKGBUILD (needs Arch's makepkg).
+.SRCINFO: PKGBUILD
+	makepkg --printsrcinfo > $@
 
 # Tarball for building distribution packages
 tarball: gatotray-$(VERSION).$(REL).tar.gz
