@@ -52,7 +52,7 @@ static void net_dev_refresh(int elapsed_ms)
         // rx_bytes packets errs drop fifo frame compressed multicast tx_bytes ...
         // To read rx_bytes and tx_bytes: 1 read, 7 skips, 1 read.
         u64 rx, tx;
-        if (sscanf(colon + 1, " %llu %*u %*u %*u %*u %*u %*u %llu",
+        if (sscanf(colon + 1, " %llu %*u %*u %*u %*u %*u %*u %*u %llu",
                    &rx, &tx) != 2) continue;
         current[n].rx = rx;
         current[n].tx = tx;
